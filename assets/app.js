@@ -107,14 +107,44 @@
       }
       var modalCopyBtn = e.target.closest("[data-note-modal-copy]");
       if (modalCopyBtn) {
-        var modalText = noteModal.getAttribute("data-full-text") || "";
-        copyText(modalText).then(function () {
+        var modalTitle = noteModalTitle ? noteModalTitle.textContent : "";
+        var modalBody = noteModal.getAttribute("data-full-text") || "";
+        copyNote(modalTitle, modalBody).then(function () {
           flashCopyButton(modalCopyBtn);
         }).catch(function () {
           // clipboard unavailable
         });
       }
     });
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function noteCopyPayload(title, body) {
+    var titleText = (title || "").trim();
+    var bodyText = body || "";
+    var plain = titleText
+      ? (bodyText ? titleText + "\n\n" + bodyText : titleText)
+      : bodyText;
+    var htmlParts = [];
+    if (titleText) {
+      htmlParts.push("<h3>" + escapeHtml(titleText) + "</h3>");
+    }
+    if (bodyText) {
+      var paragraphs = bodyText.split(/\n{2,}/);
+      paragraphs.forEach(function (para) {
+        htmlParts.push(
+          "<p>" + escapeHtml(para).replace(/\n/g, "<br>") + "</p>"
+        );
+      });
+    }
+    return { plain: plain, html: htmlParts.join("") };
   }
 
   function copyText(text) {
@@ -141,6 +171,63 @@
         document.body.removeChild(ta);
       }
     });
+  }
+
+  function copyRich(plain, html) {
+    if (
+      navigator.clipboard &&
+      typeof ClipboardItem !== "undefined" &&
+      navigator.clipboard.write
+    ) {
+      try {
+        var item = new ClipboardItem({
+          "text/plain": Promise.resolve(
+            new Blob([plain], { type: "text/plain" })
+          ),
+          "text/html": Promise.resolve(new Blob([html], { type: "text/html" })),
+        });
+        return navigator.clipboard.write([item]).catch(function () {
+          return copyRichViaSelection(plain, html);
+        });
+      } catch (err) {
+        // fall through
+      }
+    }
+    return copyRichViaSelection(plain, html);
+  }
+
+  function copyRichViaSelection(plain, html) {
+    return new Promise(function (resolve, reject) {
+      var holder = document.createElement("div");
+      holder.contentEditable = "true";
+      holder.style.position = "fixed";
+      holder.style.left = "-9999px";
+      holder.style.whiteSpace = "pre-wrap";
+      holder.innerHTML = html || escapeHtml(plain);
+      document.body.appendChild(holder);
+      var selection = window.getSelection();
+      var range = document.createRange();
+      range.selectNodeContents(holder);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      try {
+        if (document.execCommand("copy")) {
+          resolve();
+        } else {
+          copyText(plain).then(resolve, reject);
+        }
+      } catch (err) {
+        copyText(plain).then(resolve, reject);
+      } finally {
+        selection.removeAllRanges();
+        document.body.removeChild(holder);
+      }
+    });
+  }
+
+  function copyNote(title, body) {
+    var payload = noteCopyPayload(title, body);
+    return copyRich(payload.plain, payload.html);
   }
 
   function flashCopyButton(btn) {
@@ -1173,8 +1260,10 @@
         if (copyBtn.closest(".is-rearranging")) return;
         var copyCard = copyBtn.closest(".item-card[data-org-id]");
         if (!copyCard) return;
-        var full = copyCard.getAttribute("data-full-text") || "";
-        copyText(full).then(function () {
+        var copyTitleEl = qs("h3", copyCard);
+        var copyTitle = copyTitleEl ? copyTitleEl.textContent : "";
+        var copyBody = copyCard.getAttribute("data-full-text") || "";
+        copyNote(copyTitle, copyBody).then(function () {
           flashCopyButton(copyBtn);
         }).catch(function () {
           // clipboard unavailable
