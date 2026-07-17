@@ -344,6 +344,24 @@ $showEmpty = !$folderExists;
     </aside>
 <?php endif; ?>
 
+<footer class="app-credits">
+    <details>
+        <summary>Credits &amp; links</summary>
+        <div class="app-credits__badges">
+            <img src="https://img.shields.io/github/last-commit/Siphon880gh/adhd-scattered-notes-harness/main" alt="Last Commit">
+            <a href="https://github.com/Siphon880gh" target="_blank" rel="noopener noreferrer">
+                <img src="https://img.shields.io/badge/GitHub--blue?style=social&amp;logo=GitHub" alt="GitHub">
+            </a>
+            <a href="https://www.linkedin.com/in/weng-fung/" target="_blank" rel="noopener noreferrer">
+                <img src="https://img.shields.io/badge/LinkedIn-blue?style=flat&amp;logo=linkedin&amp;labelColor=blue" alt="LinkedIn">
+            </a>
+            <a href="https://www.youtube.com/@WayneTeachesCode/" target="_blank" rel="noopener noreferrer">
+                <img src="https://img.shields.io/badge/Youtube-red?style=flat&amp;logo=youtube&amp;labelColor=red" alt="YouTube">
+            </a>
+        </div>
+    </details>
+</footer>
+
 <script src="assets/app.js"></script>
 </body>
 </html>

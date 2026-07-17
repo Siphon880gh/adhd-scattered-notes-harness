@@ -427,3 +427,52 @@ code {
   margin-right: 0.35rem;
   color: var(--warn);
 }
+
+.app-credits {
+  margin-top: 2rem;
+  padding: 0.5rem 1rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.app-credits details {
+  max-width: 36rem;
+}
+
+.app-credits summary {
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+
+.app-credits summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-credits summary::before {
+  content: "▸ ";
+  font-size: 0.7em;
+}
+
+.app-credits details[open] summary::before {
+  content: "▾ ";
+}
+
+.app-credits summary:hover {
+  color: var(--ink);
+}
+
+.app-credits__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.app-credits__badges img {
+  display: block;
+  height: 20px;
+  width: auto;
+}

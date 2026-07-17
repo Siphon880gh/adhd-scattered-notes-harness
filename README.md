@@ -1,10 +1,19 @@
-# Scattered Notes Harness
+# Scattered Notes Harness for ADHD Mind
+
+By Weng (Weng Fei Fung)
+
+For ADHD minds that jot notes everywhere in real time—then turn the mess into clear tasks and reference.
+
+![Last Commit](https://img.shields.io/github/last-commit/Siphon880gh/adhd-scattered-notes-harness/main)
+[![GitHub](https://img.shields.io/badge/GitHub--blue?style=social&logo=GitHub)](https://github.com/Siphon880gh)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-blue?style=flat&logo=linkedin&labelColor=blue)](https://www.linkedin.com/in/weng-fung/)
+[![Youtube](https://img.shields.io/badge/Youtube-red?style=flat&logo=youtube&labelColor=red)](https://www.youtube.com/@WayneTeachesCode/)
 
 A Cursor / Claude Code harness for turning a folder of ad-hoc notes into grouped tasks and reference knowledge—without losing detail.
 
 The PHP app is an **artifact container**. You do not organize notes in the browser. You run the skill in Cursor or Claude Code; the skill writes artifacts next to your notes; you open `index.php` to review them, then return to the chat to continue.
 
-## Why this exists
+## Why this exists for ADHD
 
 If you have ADHD, notes rarely land in one place. You jot something in a `.txt` file, sketch an idea in a `.md` note, save a half-formed thought in another file—and weeks later you have a folder of fragments with no clear through-line.
 
