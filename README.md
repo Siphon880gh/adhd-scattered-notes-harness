@@ -11,7 +11,7 @@ For ADHD minds that jot notes everywhere in real time-and wishes to turn the mes
 
 A Cursor / Claude Code harness for turning a folder of ad-hoc notes into grouped tasks and reference knowledge—without losing detail.
 
-The PHP app is an **artifact container**. You do not organize notes in the browser. You run the skill in Cursor or Claude Code; the skill writes artifacts next to your notes; you open `index.php` to review them, then return to the chat to continue.
+The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 adjustments in the browser (move / tag / reorder), then return to the chat for merges and fidelity fixes.
 
 ## Why this exists for ADHD
 
@@ -27,7 +27,7 @@ The skill treats a note as a line, a group of lines, or a whole file, and uses `
 |-------|------|
 | `.agents/skills/scattered-notes` | Agent skill: pick folder, write artifacts, update config |
 | `app.config.json` | Points the app at one `inputs/` folder and the active phase |
-| `index.php` | Read-only viewer for Phase 1 / Phase 2 artifacts |
+| `index.php` | Phase 1 reviewer + Phase 2 interactive organizer (saves into `phase2.json`) |
 
 There is **no folder switcher in the app**. The skill sets `app.config.json`; the app shows whatever that file points at.
 
@@ -76,9 +76,17 @@ Review marks in `index.php`. Explain shorthand in the agent chat; the skill upda
 
 ### Phase 2 — organize with fidelity
 
-When Phase 1 is done, the skill groups notes into **tasks**, **reference knowledge**, and **article candidates**. Every source line is accounted for in a blame map so details do not disappear silently.
+When Phase 1 is done, the skill groups notes into **Scattered**, **Reference**, and **Articles** (stored in `phase2.json` as `tasks`, `reference`, and `articleCandidates`). Every source line is accounted for in a blame map so details do not disappear silently.
 
-In the app, the main panel shows the organized result. A hamburger opens the original notes with per-line accounting comments.
+In the app you can:
+
+- **Move** items between Scattered / Reference / Articles (Move dropdown on each card)
+- **Tag** any item on the right; new tags appear in the **Filter** bar at the top
+- **Collapse / expand** each panel from its header
+- **Rearrange** items inside a panel: click the ↔ icon, drag cards, then release (or click ↔ again) to finish — order is saved
+- Open original notes with per-line accounting via the hamburger (**B** toggles that sidebar open/closed)
+
+Browser edits write back to `phase2.json`. Return to Cursor / Claude Code for merges or fidelity fixes (e.g. “Merge t1 and t3”).
 
 ## Skill handoff
 
@@ -94,7 +102,7 @@ Same harness, stepped explicitly in chat:
 
 1. `/scattered-notes Start` — list folders under `inputs/`, pick one (or reset sample / use your own notes)
 2. `/scattered-notes Lets start Phase 1` — mark uncertain shorthand/symbols and enrich YouTube links; review in `index.php`, then return to chat to explain marks or confirm
-3. `/scattered-notes Lets go to Phase 2` — organize into tasks / reference / article candidates with per-line blame; review in `index.php`, then return to chat to refine
+3. `/scattered-notes Lets go to Phase 2` — organize into Scattered / Reference / Articles with per-line blame; review and lightly edit in `index.php`, then return to chat to refine
 
 Between steps, serve and open the app as usual (`php -S localhost:8765` → `http://localhost:8765`).
 
@@ -140,14 +148,14 @@ Back in the agent chat, ask to proceed to Phase 2. The skill writes `phase2.json
 
 ![Proceed to Phase 2 in chat](docs/screenshots/e.png)
 
-### 7. Phase 2 — organized tasks and reference
+### 7. Phase 2 — organized panels you can edit
 
-Reload the app. The main view shows grouped **tasks** (and reference / article candidates) with source line links.
+Reload the app. The main view shows **Scattered**, **Reference**, and **Articles** with source line links. On each card, use the right-side tray to add tags and Move between panels. Use the top Filter chips once tags exist; collapse panels from the header; use ↔ to rearrange within a panel.
 
 ![Phase 2: organized tasks](docs/screenshots/f.png)
 
 ### 8. Hamburger — original notes with per-line accounting
 
-Use the hamburger to open original notes. Each source line shows what it became (`mapped`, `merged`, `reference`, `dropped_noise`, etc.) so nothing disappears silently.
+Use the hamburger (or **B**) to open or close original notes. Each source line shows what it became (`mapped`, `merged`, `reference`, `dropped_noise`, etc.) so nothing disappears silently.
 
 ![Phase 2: line accounting panel](docs/screenshots/g.png)

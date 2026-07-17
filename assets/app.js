@@ -162,11 +162,29 @@
     });
     if (!targets.length) return false;
 
+    var expandedAny = false;
     targets.forEach(function (el) {
-      el.classList.add("is-flash");
+      var section = el.closest("[data-section-bucket]");
+      if (section && section.classList.contains("is-collapsed")) {
+        setCollapsed(section, false);
+        expandedAny = true;
+      }
     });
-    targets[0].scrollIntoView({ behavior: "smooth", block: "center" });
-    highlightTimer = setTimeout(clearOrgHighlight, 2200);
+
+    function flashAndScroll() {
+      targets.forEach(function (el) {
+        el.classList.add("is-flash");
+      });
+      targets[0].scrollIntoView({ behavior: "smooth", block: "center" });
+      highlightTimer = setTimeout(clearOrgHighlight, 2200);
+    }
+
+    if (expandedAny) {
+      // Wait for section expand animation before scrolling into view
+      setTimeout(flashAndScroll, 300);
+    } else {
+      flashAndScroll();
+    }
     return true;
   }
 

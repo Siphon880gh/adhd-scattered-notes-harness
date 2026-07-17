@@ -69,7 +69,12 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
 
 - Include **every** line of every note file (`n` is 1-based; `text` is the original line).
 - Mark unsure tokens especially symbols / shorthand that do not make sense after reading `shorthands.md`.
-- For YouTube URLs: set `youtube` with title and a short “what this video is about”, inferred from YouTube title, description, and comments. Do **not** watch the video. The app renders this like a git-diff green added line.
+- For every YouTube / `youtu.be` URL: **fetch real metadata** (do not invent titles from the URL alone). Prefer YouTube oEmbed `https://www.youtube.com/oembed?url={URL}&format=json`, or fetch the watch page. Then set `youtube` with:
+  - `title` — exact video title from the fetch
+  - `about` — 1–2 sentences from title + description (and comments if useful)
+  - `added: true`
+  Do **not** watch the video. The app renders this like a git-diff green added line.
+- **Forbidden** YouTube titles/abouts: placeholders such as “YouTube link”, “metadata placeholder”, “unknown video”, empty `about` when the URL is reachable, or any invented stub. If fetch fails after trying: `title` = `YouTube (lookup failed)` and put the failure reason in `about`.
 
 ### `phase2.json`
 
@@ -89,6 +94,8 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
 ```
 
 Every source line must have a `blame` entry. Use fates such as: `mapped`, `merged`, `reference`, `uncertain_carried`, `dropped_duplicate`, `dropped_noise`, `separator`.
+
+Phase 2 items that come from a YouTube line **must reuse** `youtube.title` and `youtube.about` from `phase1.json` (e.g. reference title = that title; body includes the URL plus `about`). Do **not** invent a new title or write a metadata placeholder in Phase 2.
 
 ### `shorthands.md` (project root)
 
@@ -196,9 +203,10 @@ WTF is the difference between EXPOSE and publishing -p again
 1. Ensure project-root `shorthands.md` exists (create a stub with `# Shorthands` and an empty table if missing).
 2. **Read root `shorthands.md` fully** before marking anything.
 3. Read all note `.md`/`.txt` files in the folder.
-4. Write/update `phase1.json` with line-level marks and YouTube descriptors.
-5. Set `app.config.json` `"phase": 1`.
-6. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks, and **return to this chat** to:
+4. For **each** YouTube / `youtu.be` URL found: run a metadata fetch (oEmbed or watch page) **before** writing `phase1.json`. Fill `youtube.title` / `youtube.about` from that response only.
+5. Write/update `phase1.json` with line-level marks and YouTube descriptors (no placeholder titles).
+6. Set `app.config.json` `"phase": 1`.
+7. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks, and **return to this chat** to:
    - explain any flagged shorthand/symbols, or
    - say Phase 1 looks good and advance to Phase 2.
 
@@ -210,9 +218,10 @@ Only after the user confirms Phase 1 is done:
 
 1. Set `app.config.json` `"phase": 2`.
 2. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
-3. Account for every line in `blame` — fidelity first; do not silently drop details.
-4. Write `phase2.json`.
-5. Tell the user to refresh `index.php`, review organized output and the hamburger originals/blame panel, then **return to this chat** to refine groupings or fix fidelity gaps.
+3. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
+4. Account for every line in `blame` — fidelity first; do not silently drop details.
+5. Write `phase2.json`.
+6. Tell the user to refresh `index.php`, review organized output and the hamburger originals/blame panel, then **return to this chat** to refine groupings or fix fidelity gaps.
 
 ## Agent checklist
 
@@ -223,10 +232,11 @@ Only after the user confirms Phase 1 is done:
 5. Read root `shorthands.md` before any uncertainty marks.
 6. Never treat root `shorthands.md` / `phase1.json` / `phase2.json` as source notes.
 7. Phase 1 artifacts must be visible in the app after refresh.
-8. YouTube: title + about from metadata/comments only; `youtube.added: true`.
-9. Phase 2: every line in every note file appears in `blame`.
-10. Do not advance to Phase 2 without explicit user confirmation.
-11. After each write, remind the user how to return to Cursor / Claude Code to continue.
+8. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure only: `YouTube (lookup failed)`.
+9. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`.
+10. Phase 2: every line in every note file appears in `blame`.
+11. Do not advance to Phase 2 without explicit user confirmation.
+12. After each write, remind the user how to return to Cursor / Claude Code to continue.
 
 ## Return-to-chat prompts (for the user)
 

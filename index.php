@@ -546,6 +546,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js?v=1.10"></script>
+<script src="assets/app.js?v=1.11"></script>
 </body>
 </html>
