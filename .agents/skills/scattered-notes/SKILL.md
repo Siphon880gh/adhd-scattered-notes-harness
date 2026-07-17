@@ -28,8 +28,7 @@ Per batch folder `inputs/{folder}/`:
 
 | File | Role |
 |------|------|
-| `*.md`, `*.txt` (except `shorthands.md`) | Raw scattered notes |
-| `shorthands.md` | Glossary for this batch — **always read before marking uncertainty** |
+| `*.md`, `*.txt` | Raw scattered notes |
 | `phase1.json` | Uncertain marks + YouTube enrichments |
 | `phase2.json` | Organized notes + per-line blame map |
 
@@ -37,9 +36,10 @@ Project root:
 
 | File | Role |
 |------|------|
-| `app.config.json` | `{ "inputFolder": "{folder}", "phase": 1 \| 2 }` — skill owns this |
+| `app.config.json` | `{ "inputFolder": "{folder}" \| "", "phase": 1 \| 2 }` — skill owns this; empty `inputFolder` means no project selected |
+| `shorthands.md` | App-wide glossary — **always read before marking uncertainty**; shared by every batch |
 
-Skip when reading notes: `shorthands.md`, `phase1.json`, `phase2.json`, and any non-`.md`/`.txt` files.
+Skip when reading notes: `phase1.json`, `phase2.json`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
 
 A scattered note may be a line, a group of lines, or a whole file. Within a file, `---` separates notes. The batch is one broad category (coding, linux, etc.).
 
@@ -90,9 +90,9 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
 
 Every source line must have a `blame` entry. Use fates such as: `mapped`, `merged`, `reference`, `uncertain_carried`, `dropped_duplicate`, `dropped_noise`, `separator`.
 
-### `shorthands.md`
+### `shorthands.md` (project root)
 
-Markdown glossary for the batch. Example:
+App-wide markdown glossary at the project root (not inside a batch folder). Example:
 
 ```markdown
 # Shorthands
@@ -102,21 +102,99 @@ Markdown glossary for the batch. Example:
 | wtf | write the function |
 ```
 
-When the user explains a symbol or shorthand in chat, update this file, then re-run Phase 1 marks so resolved tokens are no longer flagged.
+When the user explains a symbol or shorthand in chat, update this root file, then re-run Phase 1 marks so resolved tokens are no longer flagged. Tokens apply across all batches.
 
 ## Strict workflow
 
-### 0. Pick folder
+### 0. Sample offer, then pick folder
 
-1. List directories under `inputs/` (ignore files like `.gitkeep`).
-2. Ask the user which folder to process.
-3. If none exist: tell them to create `inputs/{name}/`, dump `.md`/`.txt` notes (separate files or one file with `---` — both fine), then re-run.
-4. Write `app.config.json` with that folder and `"phase": 1`.
+On **first start** and whenever **restarting** (re-picking a folder, re-running the skill, or starting over): list directories under `inputs/` (ignore files like `.gitkeep`), then offer these options:
+
+1. **Reset sample and select it** — wipe/recreate `inputs/sample/`, set it as the active project, continue Phase 1.
+2. **Reset sample only** — wipe/recreate `inputs/sample/`, reset `app.config.json` so `inputFolder` is empty (no project selected); stop and wait for the next pick.
+3. **Use folder `{name}`** — one option per non-sample directory under `inputs/` (skip selecting stale sample unless they pick option 1).
+4. **None / use my notes** — if they need a new batch: tell them to create `inputs/{name}/`, dump `.md`/`.txt` notes (separate files or one file with `---` — both fine), then re-run.
+
+Selecting sample is never “open whatever is already there” — options 1 and 2 always run the reset below.
+
+- **If they choose “Reset sample and select it”:**
+  1. Delete the entire `inputs/sample/` directory if it exists.
+  2. Recreate `inputs/sample/` with only the three note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
+  3. Write `app.config.json` with `"inputFolder": "sample"` and `"phase": 1`.
+  4. Continue with Phase 1 on `sample`.
+
+- **If they choose “Reset sample only”:**
+  1. Delete the entire `inputs/sample/` directory if it exists.
+  2. Recreate `inputs/sample/` with only the three note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
+  3. Write `app.config.json` with `"inputFolder": ""` and `"phase": 1` (no project selected).
+  4. Stop and re-offer folder options (without auto-continuing into Phase 1).
+
+- **If they choose another folder under `inputs/`:**
+  1. Write `app.config.json` with that folder and `"phase": 1`.
+  2. Continue with Phase 1 on that folder.
+
+- **If they choose “None / use my notes” and no suitable folder exists:**
+  1. Tell them to create `inputs/{name}/` and add notes, then re-run.
+
+#### Sample note templates (recreate exactly; no phase JSON)
+
+`inputs/sample/braindump.md`:
+
+```markdown
+# linux / server scraps
+
+wtf does nginx -t actually validate? reload vs restart again
+---
+ssh keys: copy pub to authorized_keys but ALSO check permissions 700/600 or it silently fails
+---
+journalctl -u nginx -f   // remember -u not --unit when tired
+---
+https://youtu.be/dQw4w9WgXcQ
+---
+ufw: allow 80/443 then enable; don't lock yourself out of 22
+---
+certbot certonly --nginx -d example.com
+renewal is a cron/timer thing — check with systemctl list-timers | grep cert
+```
+
+`inputs/sample/half-thoughts.md`:
+
+```markdown
+rsync -avz --delete ./dist/ user@host:/var/www/app/
+DRY RUN FIRST with -n
+
+tmux: Ctrl-b d detach, Ctrl-b c new window, Ctrl-b % split
+
+grep -R "TODO" --exclude-dir=node_modules .
+
+article idea?: "permissions that look fine but break ssh/nginx" — 700 home, 700 .ssh, 600 keys, SELinux/AppArmor footnote
+
+pg: dump with pg_dump -Fc, restore pg_restore -d ... don't use plain sql for big dbs
+```
+
+`inputs/sample/random.txt`:
+
+```text
+docker ps -a | grep dead
+prune? careful volumes
+
+---
+
+compose: depends_on does NOT wait for healthy unless condition
+
+---
+
+asdf vs nvm vs mise — pick one for node on laptop, stop installing globally with brew every time
+
+---
+
+WTF is the difference between EXPOSE and publishing -p again
+```
 
 ### 1. Phase 1 — mark uncertain + YouTube
 
-1. Ensure `shorthands.md` exists (create a stub with `# Shorthands` and an empty table if missing).
-2. **Read `shorthands.md` fully** before marking anything.
+1. Ensure project-root `shorthands.md` exists (create a stub with `# Shorthands` and an empty table if missing).
+2. **Read root `shorthands.md` fully** before marking anything.
 3. Read all note `.md`/`.txt` files in the folder.
 4. Write/update `phase1.json` with line-level marks and YouTube descriptors.
 5. Set `app.config.json` `"phase": 1`.
@@ -124,7 +202,7 @@ When the user explains a symbol or shorthand in chat, update this file, then re-
    - explain any flagged shorthand/symbols, or
    - say Phase 1 looks good and advance to Phase 2.
 
-Phase 1 may loop: user explains → update `shorthands.md` → rewrite `phase1.json` → user refreshes the app.
+Phase 1 may loop: user explains → update root `shorthands.md` → rewrite `phase1.json` → user refreshes the app.
 
 ### 2. Phase 2 — organize with fidelity
 
@@ -138,14 +216,17 @@ Only after the user confirms Phase 1 is done:
 
 ## Agent checklist
 
-1. List `inputs/` folders; ask which one; update `app.config.json`.
-2. Read `shorthands.md` before any uncertainty marks.
-3. Never treat `shorthands.md` / `phase1.json` / `phase2.json` as source notes.
-4. Phase 1 artifacts must be visible in the app after refresh.
-5. YouTube: title + about from metadata/comments only; `youtube.added: true`.
-6. Phase 2: every line in every note file appears in `blame`.
-7. Do not advance to Phase 2 without explicit user confirmation.
-8. After each write, remind the user how to return to Cursor / Claude Code to continue.
+1. On first start and on every restart/folder pick: offer (a) reset sample + select it, (b) reset sample only / no project, (c) each other `inputs/` folder, (d) none / use my notes.
+2. If reset sample + select: delete `inputs/sample/`, recreate note files only (no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
+3. If reset sample only: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`, re-offer folders.
+4. If another folder: update `app.config.json` to that folder phase 1.
+5. Read root `shorthands.md` before any uncertainty marks.
+6. Never treat root `shorthands.md` / `phase1.json` / `phase2.json` as source notes.
+7. Phase 1 artifacts must be visible in the app after refresh.
+8. YouTube: title + about from metadata/comments only; `youtube.added: true`.
+9. Phase 2: every line in every note file appears in `blame`.
+10. Do not advance to Phase 2 without explicit user confirmation.
+11. After each write, remind the user how to return to Cursor / Claude Code to continue.
 
 ## Return-to-chat prompts (for the user)
 

@@ -45,11 +45,12 @@ Then open `http://localhost:8765`.
 ## Input layout
 
 ```
+shorthands.md          # app-wide glossary (skill-maintained)
+app.config.json
 inputs/
   whatname/
     note-one.md
     random-thought.txt
-    shorthands.md      # glossary for this batch (skill-maintained)
     phase1.json        # uncertain marks + YouTube descriptors
     phase2.json        # organized notes + per-line blame map
 ```
@@ -67,9 +68,9 @@ inputs/
 
 ### Phase 1 — clarify before organize
 
-The skill reads `shorthands.md` first, then marks unclear symbols and shorthand. YouTube links get a green “added” descriptor (title / what the video is about) inferred from the video’s title, description, and comments—no watching required.
+The skill reads the app-wide `shorthands.md` (project root) first, then marks unclear symbols and shorthand. YouTube links get a green “added” descriptor (title / what the video is about) inferred from the video’s title, description, and comments—no watching required.
 
-Review marks in `index.php`. Explain shorthand in the agent chat; the skill updates `shorthands.md` and refreshes `phase1.json`. Reload the app to see updates.
+Review marks in `index.php`. Explain shorthand in the agent chat; the skill updates root `shorthands.md` and refreshes `phase1.json`. Reload the app to see updates.
 
 ### Phase 2 — organize with fidelity
 

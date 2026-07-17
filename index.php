@@ -85,7 +85,7 @@ $showEmpty = !$folderExists;
             </svg>
         </button>
     <?php endif; ?>
-    <div class="app-header__brand">Scattered Notes</div>
+    <a href="index.php" class="app-header__brand">Scattered Notes</a>
     <div class="app-header__meta">
         <?php if ($showEmpty): ?>
             no folder configured
@@ -143,7 +143,7 @@ $showEmpty = !$folderExists;
             Reload this page after the skill updates <code>phase1.json</code>.
         </p>
         <ul>
-            <li>In Cursor / Claude Code, explain any flagged shorthand (the skill updates <code>shorthands.md</code>).</li>
+            <li>In Cursor / Claude Code, explain any flagged shorthand (the skill updates the app-wide <code>shorthands.md</code>).</li>
             <li>Or say Phase 1 looks good and ask to start Phase 2.</li>
         </ul>
     </aside>
