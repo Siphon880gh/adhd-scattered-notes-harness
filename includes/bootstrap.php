@@ -168,6 +168,97 @@ function normalize_tags($tags): array
 }
 
 /**
+ * @param array<string, mixed> $organized
+ * @return list<string>
+ */
+function collect_organized_tags(array $organized): array
+{
+    $out = [];
+    $seen = [];
+    foreach (phase2_bucket_keys() as $bucket) {
+        $items = $organized[$bucket] ?? [];
+        if (!is_array($items)) {
+            continue;
+        }
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            foreach (normalize_tags($item['tags'] ?? []) as $tagName) {
+                $key = strtolower($tagName);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $out[] = $tagName;
+            }
+        }
+    }
+    return $out;
+}
+
+/**
+ * @param mixed $layout
+ * @param list<string> $availableTags
+ * @return list<array{type: string, name?: string}>
+ */
+function normalize_filter_layout($layout, array $availableTags): array
+{
+    $available = [];
+    foreach ($availableTags as $tagName) {
+        $name = trim((string) $tagName);
+        if ($name === '') {
+            continue;
+        }
+        $available[strtolower($name)] = $name;
+    }
+
+    $out = [];
+    $used = [];
+    if (is_array($layout)) {
+        foreach ($layout as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $type = (string) ($item['type'] ?? '');
+            if ($type === 'divider') {
+                if ($out !== [] && ($out[count($out) - 1]['type'] ?? '') === 'divider') {
+                    continue;
+                }
+                $out[] = ['type' => 'divider'];
+                continue;
+            }
+            if ($type !== 'tag') {
+                continue;
+            }
+            $name = trim((string) ($item['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $key = strtolower($name);
+            if (!isset($available[$key]) || isset($used[$key])) {
+                continue;
+            }
+            $used[$key] = true;
+            $out[] = ['type' => 'tag', 'name' => $available[$key]];
+        }
+    }
+
+    $missing = [];
+    foreach ($available as $key => $name) {
+        if (!isset($used[$key])) {
+            $missing[] = $name;
+        }
+    }
+    natcasesort($missing);
+    foreach (array_values($missing) as $name) {
+        $out[] = ['type' => 'tag', 'name' => $name];
+    }
+
+    return $out;
+}
+
+/**
  * @param array<string, mixed> $item
  * @return array<string, mixed>
  */

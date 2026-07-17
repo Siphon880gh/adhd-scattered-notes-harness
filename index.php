@@ -33,6 +33,14 @@ if (
     $phase2Path = $dir . '/phase2.json';
     $existing = load_json_file($phase2Path) ?? [];
     $existing['organized'] = normalize_organized($payload['organized']);
+    $availableTags = collect_organized_tags($existing['organized']);
+    if (array_key_exists('filterLayout', $payload)) {
+        $existing['filterLayout'] = normalize_filter_layout($payload['filterLayout'], $availableTags);
+    } elseif (!isset($existing['filterLayout']) || !is_array($existing['filterLayout'])) {
+        $existing['filterLayout'] = normalize_filter_layout([], $availableTags);
+    } else {
+        $existing['filterLayout'] = normalize_filter_layout($existing['filterLayout'], $availableTags);
+    }
 
     if (!save_json_file($phase2Path, $existing)) {
         http_response_code(500);
@@ -40,7 +48,11 @@ if (
         exit;
     }
 
-    echo json_encode(['ok' => true, 'organized' => $existing['organized']]);
+    echo json_encode([
+        'ok' => true,
+        'organized' => $existing['organized'],
+        'filterLayout' => $existing['filterLayout'],
+    ]);
     exit;
 }
 
@@ -182,7 +194,7 @@ $showEmpty = !$folderExists;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css?v=1.13">
+    <link rel="stylesheet" href="assets/app.css?v=1.16">
 </head>
 <body>
 <header class="app-header">
@@ -372,40 +384,50 @@ $showEmpty = !$folderExists;
             $tasks = $organized['tasks'];
             $reference = $organized['reference'];
             $articles = $organized['articleCandidates'];
-            $allTags = [];
-            $tagSeen = [];
-            foreach ([$tasks, $reference, $articles] as $bucketItems) {
-                foreach ($bucketItems as $orgItem) {
-                    foreach (normalize_tags($orgItem['tags'] ?? []) as $tagName) {
-                        $key = strtolower($tagName);
-                        if (isset($tagSeen[$key])) {
-                            continue;
-                        }
-                        $tagSeen[$key] = true;
-                        $allTags[] = $tagName;
-                    }
-                }
-            }
-            natcasesort($allTags);
-            $allTags = array_values($allTags);
+            $allTags = collect_organized_tags($organized);
+            $filterLayout = normalize_filter_layout(
+                is_array($phase2['filterLayout'] ?? null) ? $phase2['filterLayout'] : [],
+                $allTags
+            );
             ?>
             <div class="tag-filter" data-tag-filter <?= $allTags === [] ? 'hidden' : '' ?>>
                 <span class="tag-filter__label">Filter</span>
                 <button type="button" class="tag-filter__chip is-active" data-filter-tag="" aria-pressed="true">All</button>
-                <?php foreach ($allTags as $tagName): ?>
-                    <button type="button"
-                            class="tag-filter__chip"
-                            data-filter-tag="<?= e($tagName) ?>"
-                            aria-pressed="false">
-                        <?= e($tagName) ?>
-                    </button>
-                <?php endforeach; ?>
+                <?php foreach ($filterLayout as $layoutItem):
+                    if (($layoutItem['type'] ?? '') === 'divider'): ?>
+                        <button type="button"
+                                class="tag-filter__divider"
+                                data-filter-divider
+                                title="Remove divider"
+                                aria-label="Remove divider"></button>
+                    <?php elseif (($layoutItem['type'] ?? '') === 'tag'):
+                        $tagName = (string) ($layoutItem['name'] ?? '');
+                        if ($tagName === '') {
+                            continue;
+                        }
+                        ?>
+                        <button type="button"
+                                class="tag-filter__chip"
+                                data-filter-tag="<?= e($tagName) ?>"
+                                draggable="true"
+                                aria-pressed="false">
+                            <?= e($tagName) ?>
+                        </button>
+                    <?php endif;
+                endforeach; ?>
             </div>
             <script type="application/json" id="phase2-organized-data"><?=
                 str_replace(
                     '</',
                     '<\/',
                     (string) json_encode($organized, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                )
+            ?></script>
+            <script type="application/json" id="phase2-filter-layout-data"><?=
+                str_replace(
+                    '</',
+                    '<\/',
+                    (string) json_encode($filterLayout, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                 )
             ?></script>
             <?php
@@ -599,6 +621,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js?v=1.15"></script>
+<script src="assets/app.js?v=1.17"></script>
 </body>
 </html>

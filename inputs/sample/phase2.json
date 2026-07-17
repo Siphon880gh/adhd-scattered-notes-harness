@@ -2,15 +2,6 @@
     "organized": {
         "tasks": [
             {
-                "id": "t1",
-                "title": "Clarify nginx -t, reload vs restart",
-                "body": "Figure out what `nginx -t` actually validates, and lock in when to use reload vs restart.",
-                "sources": [
-                    "braindump.md:3"
-                ],
-                "tags": []
-            },
-            {
                 "id": "t2",
                 "title": "SSH key deploy checklist (authorized_keys + perms)",
                 "body": "Copy the pubkey into ~/.ssh/authorized_keys on the host.\nThen lock down permissions or sshd will silently reject the key:\nhome directory 700, ~/.ssh 700, private key 600, authorized_keys 600.\nOwnership must be the login user (not root) on those paths.\nSELinux/AppArmor can still block a “correct” setup — worth checking when debugging.",
@@ -22,13 +13,26 @@
                 ]
             },
             {
+                "id": "t1",
+                "title": "Clarify nginx -t, reload vs restart",
+                "body": "Figure out what `nginx -t` actually validates, and lock in when to use reload vs restart.",
+                "sources": [
+                    "braindump.md:3"
+                ],
+                "tags": [
+                    "test2"
+                ]
+            },
+            {
                 "id": "t3",
                 "title": "UFW: open 80/443 without locking out SSH",
                 "body": "Allow 80/443, keep 22 open, then enable ufw so you do not lock yourself out.",
                 "sources": [
                     "braindump.md:11"
                 ],
-                "tags": []
+                "tags": [
+                    "test3"
+                ]
             },
             {
                 "id": "t4",
@@ -458,5 +462,22 @@
                 "comment": "EXPOSE vs -p question"
             }
         ]
-    }
+    },
+    "filterLayout": [
+        {
+            "type": "tag",
+            "name": "test"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "test2"
+        },
+        {
+            "type": "tag",
+            "name": "test3"
+        }
+    ]
 }

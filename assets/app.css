@@ -404,25 +404,200 @@ body.is-showing-shortcuts .app-header__menu > svg {
   color: var(--ink-muted);
 }
 
-.tag-filter__chip {
+.tag-filter__group {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg-elevated);
+  cursor: grab;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tag-filter__group:active,
+.tag-filter__group.is-dragging {
+  cursor: grabbing;
+}
+
+.tag-filter__group:hover {
+  border-color: var(--accent);
+}
+
+.tag-filter__group.is-active {
+  border-color: var(--accent);
+  background: rgba(110, 181, 255, 0.16);
+}
+
+.tag-filter__group.is-dragging {
+  opacity: 0.4;
+}
+
+.tag-filter__group.is-drop-before,
+.tag-filter__divider.is-drop-before {
+  box-shadow: -3px 0 0 var(--accent);
+}
+
+.tag-filter.is-drop-end {
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
+.tag-filter__chip {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: var(--ink);
   font-family: var(--sans);
   font-size: 0.8rem;
+  line-height: 1.3;
+  padding: 0.2rem 0.45rem 0.2rem 0.65rem;
+  user-select: none;
+}
+
+.tag-filter__group.is-active .tag-filter__chip {
+  color: var(--accent);
+}
+
+.tag-filter__chip[data-filter-tag=""] {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
   padding: 0.2rem 0.65rem;
   cursor: pointer;
 }
 
-.tag-filter__chip:hover {
+.tag-filter__chip[data-filter-tag=""]:hover {
   border-color: var(--accent);
 }
 
-.tag-filter__chip.is-active {
+.tag-filter__chip[data-filter-tag=""].is-active {
   border-color: var(--accent);
   background: rgba(110, 181, 255, 0.16);
   color: var(--accent);
+}
+
+.tag-filter__menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.tag-filter__menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  border: 0;
+  border-left: 1px solid rgba(58, 65, 75, 0.85);
+  border-radius: 0 999px 999px 0;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.tag-filter__menu-toggle:hover,
+.tag-filter__menu-wrap.is-open .tag-filter__menu-toggle {
+  color: var(--accent);
+  background: rgba(110, 181, 255, 0.12);
+}
+
+.tag-filter__menu-toggle svg {
+  transition: transform 0.15s ease;
+}
+
+.tag-filter__menu-wrap.is-open .tag-filter__menu-toggle svg,
+.tag-filter__menu-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.tag-filter__menu {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  top: auto;
+  right: 0;
+  z-index: 16;
+  min-width: 10.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #252a31;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.tag-filter__menu[hidden] {
+  display: none;
+}
+
+.tag-filter__menu-option {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  text-align: left;
+  padding: 0.42rem 0.55rem;
+  cursor: pointer;
+}
+
+.tag-filter__menu-option:hover {
+  background: rgba(110, 181, 255, 0.14);
+  color: var(--accent);
+}
+
+.tag-filter__divider {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 1.55rem;
+  margin: 0 0.05rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: grab;
+}
+
+.tag-filter__divider:active,
+.tag-filter__divider.is-dragging {
+  cursor: grabbing;
+}
+
+.tag-filter__divider.is-dragging {
+  opacity: 0.4;
+}
+
+.tag-filter__divider::before {
+  content: "";
+  width: 2px;
+  height: 1.1rem;
+  border-radius: 1px;
+  background: rgba(154, 163, 173, 0.85);
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.tag-filter__divider:hover::before,
+.tag-filter__divider:focus-visible::before {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(240, 113, 120, 0.22);
+  transform: scaleY(1.1);
+}
+
+.tag-filter.is-reordering .tag-filter__divider:not(.is-dragging) {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.tag-filter.is-reordering .tag-filter__menu-wrap {
+  pointer-events: none;
 }
 
 .section-block__header {
