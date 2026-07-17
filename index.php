@@ -95,6 +95,20 @@ $showEmpty = !$folderExists;
     </div>
 </header>
 
+<details class="adhd-about">
+    <summary>ADHD — what this is for</summary>
+    <div class="adhd-about__body">
+        <p>
+            For ADHD minds that jot notes everywhere in real time—then turn the mess into clear tasks and reference.
+            Notes rarely land in one place; this harness meets that workflow: dump scattered notes first, process them later.
+        </p>
+        <p>
+            This PHP app is an <strong>artifact container</strong>, not where you organize.
+            You run the skill in Cursor or Claude Code; it writes artifacts next to your notes; you review them here, then return to the chat to continue.
+        </p>
+    </div>
+</details>
+
 <?php if ($showEmpty): ?>
     <main class="empty-state">
         <h1>No input folder pointed</h1>
@@ -112,6 +126,7 @@ $showEmpty = !$folderExists;
                 In Cursor or Claude Code, run the skill at
                 <code>.agents/skills/scattered-notes</code> and pick that folder.
                 The skill will set <code>app.config.json</code>.
+                Or you can prompt to use the scattered note organizing skill.
             </li>
             <li>Refresh this page to review Phase 1 artifacts.</li>
         </ol>

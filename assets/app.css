@@ -87,6 +87,56 @@ code {
   font-family: var(--mono);
 }
 
+.adhd-about {
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.adhd-about > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.55rem 1rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.adhd-about > summary::-webkit-details-marker {
+  display: none;
+}
+
+.adhd-about > summary::before {
+  content: "▸ ";
+  color: var(--accent);
+  font-family: var(--mono);
+}
+
+.adhd-about[open] > summary::before {
+  content: "▾ ";
+}
+
+.adhd-about > summary:hover {
+  color: var(--ink);
+}
+
+.adhd-about__body {
+  padding: 0 1rem 0.85rem;
+  max-width: 42rem;
+}
+
+.adhd-about__body p {
+  margin: 0 0 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.adhd-about__body p:last-child {
+  margin-bottom: 0;
+}
+
 .banner {
   margin: 1rem;
   padding: 0.85rem 1rem;

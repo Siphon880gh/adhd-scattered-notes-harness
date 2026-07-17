@@ -33,7 +33,7 @@ There is **no folder switcher in the app**. The skill sets `app.config.json`; th
 
 1. Create a batch folder: `inputs/whatname/`
 2. Drop scattered notes as `.md` and/or `.txt`. One thought per file or many thoughts in one file—both are fine. Separate thoughts with `---` when they share a file.
-3. In Cursor or Claude Code, run the scattered-notes skill.
+3. In Cursor or Claude Code, run the skill at `.agents/skills/scattered-notes` and pick that folder (the skill will set `app.config.json`) — **or** prompt to use the scattered note organizing skill.
 4. Serve the app and open it to review artifacts:
 
 ```bash
