@@ -2,7 +2,7 @@
 
 By Weng (Weng Fei Fung)
 
-For ADHD minds that jot notes everywhere in real time—then turn the mess into clear tasks and reference.
+For ADHD minds that jot notes everywhere in real time-and wishes to turn the mess into clear tasks and reference.
 
 ![Last Commit](https://img.shields.io/github/last-commit/Siphon880gh/adhd-scattered-notes-harness/main)
 [![GitHub](https://img.shields.io/badge/GitHub--blue?style=social&logo=GitHub)](https://github.com/Siphon880gh)
@@ -88,3 +88,53 @@ Each phase in the app tells you how to return to Cursor or Claude Code to contin
 ## Who this is for
 
 Anyone who captures thoughts in bursts and organizes later—or never quite gets to the organizing part. The harness meets you where your notes already are.
+
+## How it looks / how to use
+
+### 1. Run the skill and pick a folder
+
+In Cursor or Claude Code, ask to use the scattered-notes skill. The agent lists folders under `inputs/` and waits for you to pick one (here: `sample`).
+
+![Run the skill and pick a folder](docs/screenshots/a1.png)
+
+### 2. Phase 1 artifacts land in the batch folder
+
+The skill writes `phase1.json` (uncertain marks, YouTube descriptors) and points you at the PHP app to review—or you can tell it Phase 1 looks good and to continue.
+
+![Phase 1 artifacts in the editor](docs/screenshots/a2.png)
+
+### 3. Review Phase 1 in the app — uncertain marks and YouTube adds
+
+Open `index.php`. Uncertain shorthand is highlighted with a note; YouTube links get a green added descriptor. Explain marks back in chat, or say Phase 1 looks good.
+
+![Phase 1: braindump with marks and YouTube descriptor](docs/screenshots/b.png)
+
+### 4. Flip through files — more shorthand marks
+
+Same Phase 1 view on another note (`half-thoughts.md`): e.g. `pg` flagged for confirmation.
+
+![Phase 1: half-thoughts with pg mark](docs/screenshots/c.png)
+
+### 5. Cross-file marks
+
+Marks can repeat across files (e.g. `WTF` in `random.txt` linked to the same token in `braindump.md`).
+
+![Phase 1: random.txt with WTF mark](docs/screenshots/d.png)
+
+### 6. Advance to Phase 2 in chat
+
+Back in the agent chat, ask to proceed to Phase 2. The skill writes `phase2.json` and sets `app.config.json` to phase 2.
+
+![Proceed to Phase 2 in chat](docs/screenshots/e.png)
+
+### 7. Phase 2 — organized tasks and reference
+
+Reload the app. The main view shows grouped **tasks** (and reference / article candidates) with source line links.
+
+![Phase 2: organized tasks](docs/screenshots/f.png)
+
+### 8. Hamburger — original notes with per-line accounting
+
+Use the hamburger to open original notes. Each source line shows what it became (`mapped`, `merged`, `reference`, `dropped_noise`, etc.) so nothing disappears silently.
+
+![Phase 2: line accounting panel](docs/screenshots/g.png)

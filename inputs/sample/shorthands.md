@@ -1,0 +1,5 @@
+# Shorthands
+
+| Token | Meaning |
+|-------|---------|
+| | |

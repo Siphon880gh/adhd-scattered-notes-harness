@@ -1,0 +1,229 @@
+{
+  "files": {
+    "braindump.md": {
+      "lines": [
+        {
+          "n": 1,
+          "text": "# linux / server scraps",
+          "marks": []
+        },
+        {
+          "n": 2,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 3,
+          "text": "wtf does nginx -t actually validate? reload vs restart again",
+          "marks": [
+            {
+              "type": "uncertain",
+              "token": "wtf",
+              "note": "unknown shorthand — slang, or a personal meaning?"
+            }
+          ]
+        },
+        {
+          "n": 4,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 5,
+          "text": "ssh keys: copy pub to authorized_keys but ALSO check permissions 700/600 or it silently fails",
+          "marks": []
+        },
+        {
+          "n": 6,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 7,
+          "text": "journalctl -u nginx -f   // remember -u not --unit when tired",
+          "marks": []
+        },
+        {
+          "n": 8,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 9,
+          "text": "https://youtu.be/dQw4w9WgXcQ",
+          "marks": [],
+          "youtube": {
+            "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+            "about": "Official music video for Rick Astley’s 1987 hit; the clip is the classic internet “rickroll” meme. Channel: Rick Astley.",
+            "added": true
+          }
+        },
+        {
+          "n": 10,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 11,
+          "text": "ufw: allow 80/443 then enable; don't lock yourself out of 22",
+          "marks": []
+        },
+        {
+          "n": 12,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 13,
+          "text": "certbot certonly --nginx -d example.com",
+          "marks": []
+        },
+        {
+          "n": 14,
+          "text": "renewal is a cron/timer thing — check with systemctl list-timers | grep cert",
+          "marks": []
+        }
+      ]
+    },
+    "half-thoughts.md": {
+      "lines": [
+        {
+          "n": 1,
+          "text": "rsync -avz --delete ./dist/ user@host:/var/www/app/",
+          "marks": []
+        },
+        {
+          "n": 2,
+          "text": "DRY RUN FIRST with -n",
+          "marks": []
+        },
+        {
+          "n": 3,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 4,
+          "text": "tmux: Ctrl-b d detach, Ctrl-b c new window, Ctrl-b % split",
+          "marks": []
+        },
+        {
+          "n": 5,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 6,
+          "text": "grep -R \"TODO\" --exclude-dir=node_modules .",
+          "marks": []
+        },
+        {
+          "n": 7,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 8,
+          "text": "article idea?: \"permissions that look fine but break ssh/nginx\" — 700 home, 700 .ssh, 600 keys, SELinux/AppArmor footnote",
+          "marks": []
+        },
+        {
+          "n": 9,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 10,
+          "text": "pg: dump with pg_dump -Fc, restore pg_restore -d ... don't use plain sql for big dbs",
+          "marks": [
+            {
+              "type": "uncertain",
+              "token": "pg",
+              "note": "assumed PostgreSQL — confirm if this is a personal shorthand"
+            }
+          ]
+        }
+      ]
+    },
+    "random.txt": {
+      "lines": [
+        {
+          "n": 1,
+          "text": "docker ps -a | grep dead",
+          "marks": []
+        },
+        {
+          "n": 2,
+          "text": "prune? careful volumes",
+          "marks": []
+        },
+        {
+          "n": 3,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 4,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 5,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 6,
+          "text": "compose: depends_on does NOT wait for healthy unless condition",
+          "marks": []
+        },
+        {
+          "n": 7,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 8,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 9,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 10,
+          "text": "asdf vs nvm vs mise — pick one for node on laptop, stop installing globally with brew every time",
+          "marks": []
+        },
+        {
+          "n": 11,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 12,
+          "text": "---",
+          "marks": []
+        },
+        {
+          "n": 13,
+          "text": "",
+          "marks": []
+        },
+        {
+          "n": 14,
+          "text": "WTF is the difference between EXPOSE and publishing -p again",
+          "marks": [
+            {
+              "type": "uncertain",
+              "token": "WTF",
+              "note": "same token as braindump.md — unknown shorthand vs colloquial"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

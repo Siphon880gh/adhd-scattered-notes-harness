@@ -1,0 +1,374 @@
+{
+  "organized": {
+    "tasks": [
+      {
+        "id": "t1",
+        "title": "Clarify nginx -t vs reload vs restart",
+        "body": "Figure out what `nginx -t` actually validates, and when to use reload vs restart.",
+        "sources": ["braindump.md:3"]
+      },
+      {
+        "id": "t2",
+        "title": "SSH authorized_keys + permission checklist",
+        "body": "When copying a public key into `authorized_keys`, also set permissions (home/`.ssh`/keys — typically 700/700/600) or auth fails silently.",
+        "sources": ["braindump.md:5"]
+      },
+      {
+        "id": "t3",
+        "title": "UFW: open web ports without locking out SSH",
+        "body": "Allow 80/443, keep 22 open, then enable UFW so you don't lock yourself out.",
+        "sources": ["braindump.md:11"]
+      },
+      {
+        "id": "t4",
+        "title": "Certbot nginx cert + confirm renewal timer",
+        "body": "`certbot certonly --nginx -d example.com`. Renewal is a cron/timer — check with `systemctl list-timers | grep cert`.",
+        "sources": ["braindump.md:13", "braindump.md:14"]
+      },
+      {
+        "id": "t5",
+        "title": "Deploy with rsync (dry-run first)",
+        "body": "`rsync -avz --delete ./dist/ user@host:/var/www/app/` — always dry-run with `-n` first.",
+        "sources": ["half-thoughts.md:1", "half-thoughts.md:2"]
+      },
+      {
+        "id": "t6",
+        "title": "Clean dead Docker containers carefully",
+        "body": "`docker ps -a | grep dead`, then prune only if careful about volumes.",
+        "sources": ["random.txt:1", "random.txt:2"]
+      },
+      {
+        "id": "t7",
+        "title": "Pick one Node version manager on laptop",
+        "body": "Choose among asdf / nvm / mise for Node; stop reinstalling Node globally with brew every time.",
+        "sources": ["random.txt:10"]
+      },
+      {
+        "id": "t8",
+        "title": "Clarify Docker EXPOSE vs publish (-p)",
+        "body": "Relearn the difference between Dockerfile `EXPOSE` and publishing ports with `-p`.",
+        "sources": ["random.txt:14"]
+      }
+    ],
+    "reference": [
+      {
+        "id": "r1",
+        "title": "journalctl unit flag shortcut",
+        "body": "`journalctl -u nginx -f` — use `-u`, not `--unit`, when tired.",
+        "sources": ["braindump.md:7"]
+      },
+      {
+        "id": "r2",
+        "title": "tmux quick keys",
+        "body": "Ctrl-b d detach; Ctrl-b c new window; Ctrl-b % split.",
+        "sources": ["half-thoughts.md:4"]
+      },
+      {
+        "id": "r3",
+        "title": "Find TODOs excluding node_modules",
+        "body": "`grep -R \"TODO\" --exclude-dir=node_modules .`",
+        "sources": ["half-thoughts.md:6"]
+      },
+      {
+        "id": "r4",
+        "title": "Postgres dump/restore for large DBs",
+        "body": "Dump with `pg_dump -Fc`, restore with `pg_restore -d ...`. Avoid plain SQL dumps for big databases.",
+        "sources": ["half-thoughts.md:10"]
+      },
+      {
+        "id": "r5",
+        "title": "Compose depends_on ≠ healthy",
+        "body": "`depends_on` does not wait for healthy unless you set a condition.",
+        "sources": ["random.txt:6"]
+      },
+      {
+        "id": "r6",
+        "title": "YouTube link in dump (rickroll)",
+        "body": "https://youtu.be/dQw4w9WgXcQ — Rick Astley, Never Gonna Give You Up (classic rickroll). Likely a placeholder/joke in the scrap pile.",
+        "sources": ["braindump.md:9"]
+      }
+    ],
+    "articleCandidates": [
+      {
+        "id": "a1",
+        "title": "Permissions that look fine but break SSH/nginx",
+        "why": "Explicit article idea in notes; pairs with the authorized_keys silent-fail tip (700 home, 700 .ssh, 600 keys, plus SELinux/AppArmor footnote).",
+        "sources": ["half-thoughts.md:8", "braindump.md:5"]
+      }
+    ]
+  },
+  "blame": {
+    "braindump.md": [
+      {
+        "n": 1,
+        "text": "# linux / server scraps",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "file heading only — batch context, not a note body"
+      },
+      {
+        "n": 2,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 3,
+        "text": "wtf does nginx -t actually validate? reload vs restart again",
+        "fate": "mapped",
+        "to": ["t1"],
+        "comment": "became nginx clarify task; wtf left as colloquial phrasing"
+      },
+      {
+        "n": 4,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 5,
+        "text": "ssh keys: copy pub to authorized_keys but ALSO check permissions 700/600 or it silently fails",
+        "fate": "mapped",
+        "to": ["t2", "a1"],
+        "comment": "task + supports article candidate on permissions"
+      },
+      {
+        "n": 6,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 7,
+        "text": "journalctl -u nginx -f   // remember -u not --unit when tired",
+        "fate": "reference",
+        "to": ["r1"],
+        "comment": "kept as cheat-sheet reference"
+      },
+      {
+        "n": 8,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 9,
+        "text": "https://youtu.be/dQw4w9WgXcQ",
+        "fate": "reference",
+        "to": ["r6"],
+        "comment": "YouTube enrichment carried as reference (rickroll placeholder)"
+      },
+      {
+        "n": 10,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 11,
+        "text": "ufw: allow 80/443 then enable; don't lock yourself out of 22",
+        "fate": "mapped",
+        "to": ["t3"],
+        "comment": "UFW setup task"
+      },
+      {
+        "n": 12,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 13,
+        "text": "certbot certonly --nginx -d example.com",
+        "fate": "merged",
+        "to": ["t4"],
+        "comment": "merged with renewal-timer line into certbot task"
+      },
+      {
+        "n": 14,
+        "text": "renewal is a cron/timer thing — check with systemctl list-timers | grep cert",
+        "fate": "merged",
+        "to": ["t4"],
+        "comment": "merged with certbot command into certbot task"
+      }
+    ],
+    "half-thoughts.md": [
+      {
+        "n": 1,
+        "text": "rsync -avz --delete ./dist/ user@host:/var/www/app/",
+        "fate": "merged",
+        "to": ["t5"],
+        "comment": "merged with dry-run reminder into deploy task"
+      },
+      {
+        "n": 2,
+        "text": "DRY RUN FIRST with -n",
+        "fate": "merged",
+        "to": ["t5"],
+        "comment": "merged with rsync command into deploy task"
+      },
+      {
+        "n": 3,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 4,
+        "text": "tmux: Ctrl-b d detach, Ctrl-b c new window, Ctrl-b % split",
+        "fate": "reference",
+        "to": ["r2"],
+        "comment": "tmux cheat sheet"
+      },
+      {
+        "n": 5,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 6,
+        "text": "grep -R \"TODO\" --exclude-dir=node_modules .",
+        "fate": "reference",
+        "to": ["r3"],
+        "comment": "grep recipe"
+      },
+      {
+        "n": 7,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 8,
+        "text": "article idea?: \"permissions that look fine but break ssh/nginx\" — 700 home, 700 .ssh, 600 keys, SELinux/AppArmor footnote",
+        "fate": "mapped",
+        "to": ["a1"],
+        "comment": "primary source for article candidate"
+      },
+      {
+        "n": 9,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 10,
+        "text": "pg: dump with pg_dump -Fc, restore pg_restore -d ... don't use plain sql for big dbs",
+        "fate": "reference",
+        "to": ["r4"],
+        "comment": "treated as PostgreSQL dump/restore reference"
+      }
+    ],
+    "random.txt": [
+      {
+        "n": 1,
+        "text": "docker ps -a | grep dead",
+        "fate": "merged",
+        "to": ["t6"],
+        "comment": "merged with prune caution into docker cleanup task"
+      },
+      {
+        "n": 2,
+        "text": "prune? careful volumes",
+        "fate": "merged",
+        "to": ["t6"],
+        "comment": "merged with dead-container grep into docker cleanup task"
+      },
+      {
+        "n": 3,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 4,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 5,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 6,
+        "text": "compose: depends_on does NOT wait for healthy unless condition",
+        "fate": "reference",
+        "to": ["r5"],
+        "comment": "compose gotcha"
+      },
+      {
+        "n": 7,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 8,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 9,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 10,
+        "text": "asdf vs nvm vs mise — pick one for node on laptop, stop installing globally with brew every time",
+        "fate": "mapped",
+        "to": ["t7"],
+        "comment": "node version manager decision task"
+      },
+      {
+        "n": 11,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 12,
+        "text": "---",
+        "fate": "separator",
+        "to": [],
+        "comment": "note separator"
+      },
+      {
+        "n": 13,
+        "text": "",
+        "fate": "dropped_noise",
+        "to": [],
+        "comment": "blank line"
+      },
+      {
+        "n": 14,
+        "text": "WTF is the difference between EXPOSE and publishing -p again",
+        "fate": "mapped",
+        "to": ["t8"],
+        "comment": "Docker EXPOSE vs -p clarify task"
+      }
+    ]
+  }
+}

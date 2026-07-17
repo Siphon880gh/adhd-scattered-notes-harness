@@ -99,7 +99,7 @@ $showEmpty = !$folderExists;
     <summary>ADHD — what this is for</summary>
     <div class="adhd-about__body">
         <p>
-            For ADHD minds that jot notes everywhere in real time—then turn the mess into clear tasks and reference.
+            For ADHD minds that jot notes everywhere in real and wishes to turn the mess into clear tasks and reference.
             Notes rarely land in one place; this harness meets that workflow: dump scattered notes first, process them later.
         </p>
         <p>
@@ -124,7 +124,7 @@ $showEmpty = !$folderExists;
             </li>
             <li>
                 In Cursor or Claude Code, run the skill at
-                <code>.agents/skills/scattered-notes</code> and pick that folder.
+                <code>.agents/skills/scattered-notes</code> and pick your desired input folder.
                 The skill will set <code>app.config.json</code>.
                 Or you can prompt:
                 <pre class="prompt-block"><code>use the scattered note organizing skill</code></pre>
