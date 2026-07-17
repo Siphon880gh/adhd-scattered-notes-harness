@@ -43,13 +43,18 @@ function render_item_cards(array $items, string $emptyLabel): void
         if (!is_array($item)) {
             continue;
         }
-        $title = (string) ($item['title'] ?? $item['id'] ?? 'Untitled');
+        $id = (string) ($item['id'] ?? '');
+        $title = (string) ($item['title'] ?? ($id !== '' ? $id : 'Untitled'));
         $body = (string) ($item['body'] ?? $item['why'] ?? '');
         $sources = $item['sources'] ?? [];
         if (!is_array($sources)) {
             $sources = [];
         }
-        echo '<article class="item-card">';
+        $attrs = 'class="item-card"';
+        if ($id !== '') {
+            $attrs .= ' id="org-' . e($id) . '" data-org-id="' . e($id) . '"';
+        }
+        echo '<article ' . $attrs . '>';
         echo '<h3>' . e($title) . '</h3>';
         if ($body !== '') {
             echo '<p>' . nl2br(e($body)) . '</p>';
@@ -74,15 +79,21 @@ $showEmpty = !$folderExists;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css">
+    <link rel="stylesheet" href="assets/app.css?v=1.4">
 </head>
 <body>
 <header class="app-header">
     <?php if (!$showEmpty && $phase === 2): ?>
-        <button type="button" class="app-header__menu" data-drawer-open aria-label="Open original notes">
+        <button type="button"
+                class="app-header__menu"
+                data-drawer-open
+                aria-label="Open original notes"
+                aria-keyshortcuts="B"
+                title="Open original notes (B)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M4 7h16M4 12h16M4 17h16"/>
             </svg>
+            <span class="shortcut-hint" data-shortcut-hint aria-hidden="true">B</span>
         </button>
     <?php endif; ?>
     <a href="index.php" class="app-header__brand">Scattered Notes</a>
@@ -303,6 +314,15 @@ $showEmpty = !$folderExists;
                         <?= e($name) ?>
                     </button>
                 <?php endforeach; ?>
+                <button type="button"
+                        class="drawer__dropped-btn"
+                        data-highlight-dropped
+                        aria-pressed="false"
+                        title="Highlight dropped lines"
+                        aria-label="Highlight dropped lines">
+                    <span class="drawer__dropped-btn__icon" aria-hidden="true">−</span>
+                    Dropped
+                </button>
             </div>
             <div class="drawer__body">
                 <?php
@@ -338,11 +358,29 @@ $showEmpty = !$folderExists;
                             if (!is_array($to)) {
                                 $to = [];
                             }
-                            $toText = $to !== [] ? ' → ' . implode(', ', array_map('strval', $to)) : '';
+                            $toIds = [];
+                            foreach ($to as $target) {
+                                $targetId = trim((string) $target);
+                                if ($targetId !== '') {
+                                    $toIds[] = $targetId;
+                                }
+                            }
+                            $isDropped = $toIds === [] || strpos($fate, 'dropped') === 0;
+                            $toText = $toIds !== [] ? ' → ' . implode(', ', $toIds) : '';
                             ?>
-                            <div class="blame-line">
-                                <div class="blame-line__n"><?= $n > 0 ? $n : '' ?></div>
-                                <div>
+                            <div class="blame-line<?= $isDropped ? ' blame-line--dropped' : ' blame-line--mapped' ?>"
+                                 role="button"
+                                 tabindex="0"
+                                 data-blame-line
+                                 data-dropped="<?= $isDropped ? '1' : '0' ?>"
+                                 data-to="<?= e(implode(',', $toIds)) ?>">
+                                <div class="blame-line__n">
+                                    <?php if ($isDropped): ?>
+                                        <span class="blame-line__drop-mark" aria-hidden="true" title="Dropped">−</span>
+                                    <?php endif; ?>
+                                    <?= $n > 0 ? $n : '' ?>
+                                </div>
+                                <div class="blame-line__main">
                                     <div class="blame-line__text"><?= e($text) ?></div>
                                     <div class="blame-line__comment">
                                         <?php if ($fate !== ''): ?>
@@ -379,6 +417,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js"></script>
+<script src="assets/app.js?v=1.4"></script>
 </body>
 </html>

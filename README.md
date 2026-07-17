@@ -19,6 +19,8 @@ If you have ADHD, notes rarely land in one place. You jot something in a `.txt` 
 
 This harness meets that workflow: dump scattered notes first, process them in two fidelity-preserving phases later.
 
+The skill treats a note as a line, a group of lines, or a whole file, and uses `---` as the separator between notes in a file. It understands that empty lines—or just the next line—may be a separate thought entirely. It also understands the same thought may be broken across multiple files. You do not need a clean system first; dump first, AI will suggest organization later.
+
 ## Roles
 
 | Piece | Role |
@@ -32,7 +34,7 @@ There is **no folder switcher in the app**. The skill sets `app.config.json`; th
 ## Setup
 
 1. Create a batch folder: `inputs/whatname/`
-2. Drop scattered notes as `.md` and/or `.txt`. One thought per file or many thoughts in one file—both are fine. Separate thoughts with `---` when they share a file.
+2. Drop scattered notes as `.md` and/or `.txt`. One thought per file, many thoughts in one file, or one thought split across files—all fine. Use `---` between thoughts in the same file when you want a hard break; blank lines and adjacent lines can still be separate thoughts.
 3. In Cursor or Claude Code, run the skill at `.agents/skills/scattered-notes` and pick that folder (the skill will set `app.config.json`) — **or** prompt to use the scattered note organizing skill.
 4. Serve the app and open it to review artifacts:
 
@@ -85,6 +87,16 @@ Each phase in the app tells you how to return to Cursor or Claude Code to contin
 1. Skill writes artifacts and sets `app.config.json`
 2. You review in `index.php`
 3. You go back to the chat to explain marks, advance phases, or fix fidelity gaps
+
+## Alternate workflow (slash commands)
+
+Same harness, stepped explicitly in chat:
+
+1. `/scattered-notes Start` — list folders under `inputs/`, pick one (or reset sample / use your own notes)
+2. `/scattered-notes Lets start Phase 1` — mark uncertain shorthand/symbols and enrich YouTube links; review in `index.php`, then return to chat to explain marks or confirm
+3. `/scattered-notes Lets go to Phase 2` — organize into tasks / reference / article candidates with per-line blame; review in `index.php`, then return to chat to refine
+
+Between steps, serve and open the app as usual (`php -S localhost:8765` → `http://localhost:8765`).
 
 ## Who this is for
 
