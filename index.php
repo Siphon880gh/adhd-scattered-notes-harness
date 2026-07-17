@@ -126,7 +126,8 @@ $showEmpty = !$folderExists;
                 In Cursor or Claude Code, run the skill at
                 <code>.agents/skills/scattered-notes</code> and pick that folder.
                 The skill will set <code>app.config.json</code>.
-                Or you can prompt to use the scattered note organizing skill.
+                Or you can prompt:
+                <pre class="prompt-block"><code>use the scattered note organizing skill</code></pre>
             </li>
             <li>Refresh this page to review Phase 1 artifacts.</li>
         </ol>
@@ -362,6 +363,7 @@ $showEmpty = !$folderExists;
 <footer class="app-credits">
     <details>
         <summary>Credits &amp; links</summary>
+        <p class="app-credits__by">By Weng (Weng Fei Fung)</p>
         <div class="app-credits__badges">
             <img src="https://img.shields.io/github/last-commit/Siphon880gh/adhd-scattered-notes-harness/main" alt="Last Commit">
             <a href="https://github.com/Siphon880gh" target="_blank" rel="noopener noreferrer">

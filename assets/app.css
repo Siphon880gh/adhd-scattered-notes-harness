@@ -232,8 +232,8 @@ code {
 }
 
 .empty-state {
-  max-width: 36rem;
-  margin: 2rem auto;
+  max-width: 42rem;
+  margin: 1.5rem 1rem;
   padding: 1.5rem;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
@@ -253,6 +253,26 @@ code {
 
 .empty-state li {
   margin-bottom: 0.5rem;
+}
+
+.prompt-block {
+  display: block;
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  overflow-x: auto;
+}
+
+.prompt-block code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+  white-space: pre-wrap;
 }
 
 .line-view {
@@ -480,20 +500,23 @@ code {
 
 .app-credits {
   margin-top: 2rem;
-  padding: 0.5rem 1rem 1rem;
+  padding: 0.55rem 1rem 1rem;
   border-top: 1px solid var(--border);
 }
 
 .app-credits details {
-  max-width: 36rem;
+  max-width: 42rem;
 }
 
 .app-credits summary {
   color: var(--ink-muted);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
   list-style: none;
   width: fit-content;
+  user-select: none;
 }
 
 .app-credits summary::-webkit-details-marker {
@@ -502,7 +525,8 @@ code {
 
 .app-credits summary::before {
   content: "▸ ";
-  font-size: 0.7em;
+  color: var(--accent);
+  font-family: var(--mono);
 }
 
 .app-credits details[open] summary::before {
@@ -511,6 +535,12 @@ code {
 
 .app-credits summary:hover {
   color: var(--ink);
+}
+
+.app-credits__by {
+  margin: 0.5rem 0 0;
+  color: var(--ink);
+  font-size: 0.9rem;
 }
 
 .app-credits__badges {
