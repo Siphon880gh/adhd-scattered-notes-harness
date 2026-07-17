@@ -8,6 +8,42 @@ $folder = $config['inputFolder'];
 $phase = $config['phase'];
 $dir = $folder !== '' ? input_dir($folder) : '';
 $folderExists = $folder !== '' && is_dir($dir);
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'save-phase2'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase !== 2) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Phase 2 is not active for this folder.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload) || !isset($payload['organized']) || !is_array($payload['organized'])) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with organized.']);
+        exit;
+    }
+
+    $phase2Path = $dir . '/phase2.json';
+    $existing = load_json_file($phase2Path) ?? [];
+    $existing['organized'] = normalize_organized($payload['organized']);
+
+    if (!save_json_file($phase2Path, $existing)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write phase2.json.']);
+        exit;
+    }
+
+    echo json_encode(['ok' => true, 'organized' => $existing['organized']]);
+    exit;
+}
+
 $noteFiles = $folderExists ? list_note_files($dir) : [];
 $activeFile = isset($_GET['file']) ? (string) $_GET['file'] : '';
 if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
@@ -16,6 +52,18 @@ if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
 
 $phase1 = $folderExists ? load_json_file($dir . '/phase1.json') : null;
 $phase2 = $folderExists ? load_json_file($dir . '/phase2.json') : null;
+
+/**
+ * @return array<string, string>
+ */
+function phase2_bucket_labels(): array
+{
+    return [
+        'tasks' => 'Scattered',
+        'reference' => 'Reference',
+        'articleCandidates' => 'Articles',
+    ];
+}
 
 /**
  * @param array<string, mixed>|null $phase1
@@ -32,13 +80,11 @@ function lines_for_file(string $dir, string $file, ?array $phase1): array
 /**
  * @param list<array<string, mixed>> $items
  */
-function render_item_cards(array $items, string $emptyLabel): void
+function render_item_cards(array $items, string $bucket, string $emptyLabel): void
 {
-    if ($items === []) {
-        echo '<p class="muted">' . e($emptyLabel) . '</p>';
-        return;
-    }
-    echo '<div class="card-list">';
+    $labels = phase2_bucket_labels();
+    echo '<p class="muted" data-empty-bucket="' . e($bucket) . '"' . ($items === [] ? '' : ' hidden') . '>' . e($emptyLabel) . '</p>';
+    echo '<div class="card-list" data-bucket-list="' . e($bucket) . '">';
     foreach ($items as $item) {
         if (!is_array($item)) {
             continue;
@@ -50,11 +96,15 @@ function render_item_cards(array $items, string $emptyLabel): void
         if (!is_array($sources)) {
             $sources = [];
         }
-        $attrs = 'class="item-card"';
+        $tags = normalize_tags($item['tags'] ?? []);
+        $tagAttr = htmlspecialchars(json_encode($tags, JSON_UNESCAPED_UNICODE), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $attrs = 'class="item-card" data-bucket="' . e($bucket) . '"';
         if ($id !== '') {
             $attrs .= ' id="org-' . e($id) . '" data-org-id="' . e($id) . '"';
         }
+        $attrs .= ' data-tags="' . $tagAttr . '"';
         echo '<article ' . $attrs . '>';
+        echo '<div class="item-card__main">';
         echo '<h3>' . e($title) . '</h3>';
         if ($body !== '') {
             echo '<p>' . nl2br(e($body)) . '</p>';
@@ -63,6 +113,37 @@ function render_item_cards(array $items, string $emptyLabel): void
             $srcText = implode(', ', array_map('strval', $sources));
             echo '<div class="item-card__meta">' . e($srcText) . '</div>';
         }
+        echo '</div>';
+        echo '<aside class="item-card__actions" aria-label="Item actions">';
+        echo '<div class="item-card__toolbar">';
+        echo '<form class="item-card__tag-form" data-tag-form>';
+        echo '<input type="text" class="item-card__tag-input" data-tag-input placeholder="Add tag" maxlength="40" autocomplete="off">';
+        echo '<button type="submit" class="item-card__tag-add" title="Add tag">Add</button>';
+        echo '</form>';
+        echo '<div class="item-card__move" data-move-wrap>';
+        echo '<button type="button" class="item-card__move-toggle" data-move-toggle aria-expanded="false" aria-haspopup="listbox">';
+        echo '<span>Move</span>';
+        echo '<svg class="item-card__move-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+        echo '</button>';
+        echo '<div class="item-card__move-menu" data-move-menu hidden role="listbox">';
+        foreach ($labels as $key => $label) {
+            if ($key === $bucket) {
+                continue;
+            }
+            echo '<button type="button" class="item-card__move-option" data-move-to="' . e($key) . '" role="option">' . e($label) . '</button>';
+        }
+        echo '</div>';
+        echo '</div>';
+        echo '</div>';
+        echo '<div class="item-card__tag-list" data-tag-list>';
+        foreach ($tags as $tag) {
+            echo '<span class="tag-chip" data-tag="' . e($tag) . '">';
+            echo '<span class="tag-chip__label">' . e($tag) . '</span>';
+            echo '<button type="button" class="tag-chip__remove" data-remove-tag="' . e($tag) . '" aria-label="Remove tag ' . e($tag) . '">×</button>';
+            echo '</span>';
+        }
+        echo '</div>';
+        echo '</aside>';
         echo '</article>';
     }
     echo '</div>';
@@ -79,7 +160,7 @@ $showEmpty = !$folderExists;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css?v=1.4">
+    <link rel="stylesheet" href="assets/app.css?v=1.9">
 </head>
 <body>
 <header class="app-header">
@@ -250,50 +331,98 @@ $showEmpty = !$folderExists;
     <aside class="banner">
         <h2>Phase 2 — organized notes</h2>
         <p>
-            Main view is the organized result. Use the hamburger to open original notes with per-line accounting
-            (what each line became).
+            Move items between Scattered / Reference / Articles. Add tags on the right of any item, then filter by tag at the top.
+            Use the hamburger for original notes with per-line accounting.
         </p>
         <ul>
-            <li>Return to Cursor / Claude Code to refine groupings or fix fidelity gaps.</li>
-            <li>Example: “Merge t1 and t3” or “Line 12 should stay as reference.”</li>
+            <li>Edits here save into <code>phase2.json</code>.</li>
+            <li>Return to Cursor / Claude Code for merges or fidelity fixes (e.g. “Merge t1 and t3”).</li>
         </ul>
     </aside>
 
-    <main class="main organized">
+    <main class="main organized" data-phase2-root>
         <?php if ($phase2 === null): ?>
             <p class="muted">
                 <code>phase2.json</code> is missing. Return to Cursor / Claude Code and ask the skill to run Phase 2.
             </p>
         <?php else:
-            $organized = $phase2['organized'] ?? [];
-            if (!is_array($organized)) {
-                $organized = [];
+            $organized = normalize_organized(is_array($phase2['organized'] ?? null) ? $phase2['organized'] : []);
+            $tasks = $organized['tasks'];
+            $reference = $organized['reference'];
+            $articles = $organized['articleCandidates'];
+            $allTags = [];
+            $tagSeen = [];
+            foreach ([$tasks, $reference, $articles] as $bucketItems) {
+                foreach ($bucketItems as $orgItem) {
+                    foreach (normalize_tags($orgItem['tags'] ?? []) as $tagName) {
+                        $key = strtolower($tagName);
+                        if (isset($tagSeen[$key])) {
+                            continue;
+                        }
+                        $tagSeen[$key] = true;
+                        $allTags[] = $tagName;
+                    }
+                }
             }
-            $tasks = $organized['tasks'] ?? [];
-            $reference = $organized['reference'] ?? [];
-            $articles = $organized['articleCandidates'] ?? [];
-            if (!is_array($tasks)) {
-                $tasks = [];
-            }
-            if (!is_array($reference)) {
-                $reference = [];
-            }
-            if (!is_array($articles)) {
-                $articles = [];
-            }
+            natcasesort($allTags);
+            $allTags = array_values($allTags);
             ?>
-            <section class="section-block">
-                <h2>Tasks</h2>
-                <?php render_item_cards($tasks, 'No tasks yet.'); ?>
-            </section>
-            <section class="section-block">
-                <h2>Reference</h2>
-                <?php render_item_cards($reference, 'No reference items yet.'); ?>
-            </section>
-            <section class="section-block">
-                <h2>Article candidates</h2>
-                <?php render_item_cards($articles, 'No article candidates yet.'); ?>
-            </section>
+            <div class="tag-filter" data-tag-filter <?= $allTags === [] ? 'hidden' : '' ?>>
+                <span class="tag-filter__label">Filter</span>
+                <button type="button" class="tag-filter__chip is-active" data-filter-tag="" aria-pressed="true">All</button>
+                <?php foreach ($allTags as $tagName): ?>
+                    <button type="button"
+                            class="tag-filter__chip"
+                            data-filter-tag="<?= e($tagName) ?>"
+                            aria-pressed="false">
+                        <?= e($tagName) ?>
+                    </button>
+                <?php endforeach; ?>
+            </div>
+            <script type="application/json" id="phase2-organized-data"><?=
+                str_replace(
+                    '</',
+                    '<\/',
+                    (string) json_encode($organized, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                )
+            ?></script>
+            <?php
+            $sections = [
+                'tasks' => ['Scattered', 'No scattered items yet.', $tasks],
+                'reference' => ['Reference', 'No reference items yet.', $reference],
+                'articleCandidates' => ['Articles', 'No article candidates yet.', $articles],
+            ];
+            foreach ($sections as $bucketKey => $sectionMeta):
+                [$sectionTitle, $emptyLabel, $sectionItems] = $sectionMeta;
+                ?>
+                <section class="section-block" data-section-bucket="<?= e($bucketKey) ?>">
+                    <div class="section-block__header">
+                        <button type="button"
+                                class="section-block__collapse"
+                                data-collapse-toggle
+                                aria-expanded="true"
+                                aria-controls="section-body-<?= e($bucketKey) ?>">
+                            <span class="section-block__chevron" aria-hidden="true"></span>
+                            <h2><?= e($sectionTitle) ?></h2>
+                        </button>
+                        <button type="button"
+                                class="section-block__rearrange"
+                                data-rearrange-toggle
+                                aria-pressed="false"
+                                title="Rearrange items"
+                                aria-label="Rearrange <?= e($sectionTitle) ?> items">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M8 9l-3 3 3 3M16 9l3 3-3 3M5 12h14"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="section-block__body" id="section-body-<?= e($bucketKey) ?>" data-section-body>
+                        <div class="section-block__body-inner">
+                            <?php render_item_cards($sectionItems, $bucketKey, $emptyLabel); ?>
+                        </div>
+                    </div>
+                </section>
+            <?php endforeach; ?>
         <?php endif; ?>
     </main>
 
@@ -417,6 +546,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js?v=1.4"></script>
+<script src="assets/app.js?v=1.10"></script>
 </body>
 </html>

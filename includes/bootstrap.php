@@ -132,3 +132,130 @@ function raw_file_lines(string $path): array
     }
     return $lines;
 }
+
+/**
+ * @return list<string>
+ */
+function phase2_bucket_keys(): array
+{
+    return ['tasks', 'reference', 'articleCandidates'];
+}
+
+/**
+ * @param mixed $tags
+ * @return list<string>
+ */
+function normalize_tags($tags): array
+{
+    if (!is_array($tags)) {
+        return [];
+    }
+    $out = [];
+    $seen = [];
+    foreach ($tags as $tag) {
+        $name = trim((string) $tag);
+        if ($name === '') {
+            continue;
+        }
+        $key = strtolower($name);
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $out[] = $name;
+    }
+    return $out;
+}
+
+/**
+ * @param array<string, mixed> $item
+ * @return array<string, mixed>
+ */
+function normalize_organized_item(array $item, string $bucket): array
+{
+    $id = trim((string) ($item['id'] ?? ''));
+    $title = (string) ($item['title'] ?? ($id !== '' ? $id : 'Untitled'));
+    $sources = $item['sources'] ?? [];
+    if (!is_array($sources)) {
+        $sources = [];
+    }
+    $sourcesOut = [];
+    foreach ($sources as $src) {
+        $sourcesOut[] = (string) $src;
+    }
+
+    $body = (string) ($item['body'] ?? '');
+    $why = (string) ($item['why'] ?? '');
+    if ($bucket === 'articleCandidates') {
+        if ($why === '' && $body !== '') {
+            $why = $body;
+        }
+        $normalized = [
+            'id' => $id,
+            'title' => $title,
+            'why' => $why,
+            'sources' => $sourcesOut,
+            'tags' => normalize_tags($item['tags'] ?? []),
+        ];
+    } else {
+        if ($body === '' && $why !== '') {
+            $body = $why;
+        }
+        $normalized = [
+            'id' => $id,
+            'title' => $title,
+            'body' => $body,
+            'sources' => $sourcesOut,
+            'tags' => normalize_tags($item['tags'] ?? []),
+        ];
+    }
+
+    return $normalized;
+}
+
+/**
+ * @param array<string, mixed>|null $organized
+ * @return array{tasks: list<array<string, mixed>>, reference: list<array<string, mixed>>, articleCandidates: list<array<string, mixed>>}
+ */
+function normalize_organized(?array $organized): array
+{
+    $out = [
+        'tasks' => [],
+        'reference' => [],
+        'articleCandidates' => [],
+    ];
+    if (!is_array($organized)) {
+        return $out;
+    }
+
+    foreach (phase2_bucket_keys() as $bucket) {
+        $items = $organized[$bucket] ?? [];
+        if (!is_array($items)) {
+            continue;
+        }
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $normalized = normalize_organized_item($item, $bucket);
+            if ($normalized['id'] === '') {
+                continue;
+            }
+            $out[$bucket][] = $normalized;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * @param array<string, mixed> $data
+ */
+function save_json_file(string $path, array $data): bool
+{
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        return false;
+    }
+    return file_put_contents($path, $json . "\n") !== false;
+}
