@@ -92,22 +92,58 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel): vo
         $id = (string) ($item['id'] ?? '');
         $title = (string) ($item['title'] ?? ($id !== '' ? $id : 'Untitled'));
         $body = (string) ($item['body'] ?? $item['why'] ?? '');
+        $bodyLines = $body === '' ? [] : preg_split("/\r\n|\r|\n/", $body);
+        if (!is_array($bodyLines)) {
+            $bodyLines = [$body];
+        }
+        $previewLimit = 3;
+        $needsTruncate = count($bodyLines) > $previewLimit;
+        $previewBody = $needsTruncate
+            ? implode("\n", array_slice($bodyLines, 0, $previewLimit))
+            : $body;
         $sources = $item['sources'] ?? [];
         if (!is_array($sources)) {
             $sources = [];
         }
         $tags = normalize_tags($item['tags'] ?? []);
         $tagAttr = htmlspecialchars(json_encode($tags, JSON_UNESCAPED_UNICODE), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $fullTextAttr = htmlspecialchars($body, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $attrs = 'class="item-card" data-bucket="' . e($bucket) . '"';
         if ($id !== '') {
             $attrs .= ' id="org-' . e($id) . '" data-org-id="' . e($id) . '"';
         }
         $attrs .= ' data-tags="' . $tagAttr . '"';
+        $attrs .= ' data-full-text="' . $fullTextAttr . '"';
         echo '<article ' . $attrs . '>';
         echo '<div class="item-card__main">';
+        echo '<div class="item-card__title-row">';
         echo '<h3>' . e($title) . '</h3>';
+        echo '<button type="button" class="item-card__copy" data-copy-item title="Copy full note text" aria-label="Copy full note text">';
+        echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        echo '<span>Copy</span>';
+        echo '</button>';
+        echo '<div class="item-card__more" data-move-wrap>';
+        echo '<button type="button" class="item-card__more-toggle" data-move-toggle aria-expanded="false" aria-haspopup="menu" title="More actions" aria-label="More actions">';
+        echo '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>';
+        echo '</button>';
+        echo '<div class="item-card__more-menu" data-move-menu hidden role="menu">';
+        echo '<div class="item-card__more-label" role="presentation">Move to</div>';
+        foreach ($labels as $key => $label) {
+            if ($key === $bucket) {
+                continue;
+            }
+            echo '<button type="button" class="item-card__more-option" data-move-to="' . e($key) . '" role="menuitem">' . e($label) . '</button>';
+        }
+        echo '</div>';
+        echo '</div>';
+        echo '</div>';
         if ($body !== '') {
-            echo '<p>' . nl2br(e($body)) . '</p>';
+            echo '<div class="item-card__body">';
+            echo '<p class="item-card__body-text">' . e($previewBody) . '</p>';
+            if ($needsTruncate) {
+                echo '<button type="button" class="item-card__read-more" data-read-more>Read more</button>';
+            }
+            echo '</div>';
         }
         if ($sources !== []) {
             $srcText = implode(', ', array_map('strval', $sources));
@@ -120,20 +156,6 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel): vo
         echo '<input type="text" class="item-card__tag-input" data-tag-input placeholder="Add tag" maxlength="40" autocomplete="off">';
         echo '<button type="submit" class="item-card__tag-add" title="Add tag">Add</button>';
         echo '</form>';
-        echo '<div class="item-card__move" data-move-wrap>';
-        echo '<button type="button" class="item-card__move-toggle" data-move-toggle aria-expanded="false" aria-haspopup="listbox">';
-        echo '<span>Move</span>';
-        echo '<svg class="item-card__move-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
-        echo '</button>';
-        echo '<div class="item-card__move-menu" data-move-menu hidden role="listbox">';
-        foreach ($labels as $key => $label) {
-            if ($key === $bucket) {
-                continue;
-            }
-            echo '<button type="button" class="item-card__move-option" data-move-to="' . e($key) . '" role="option">' . e($label) . '</button>';
-        }
-        echo '</div>';
-        echo '</div>';
         echo '</div>';
         echo '<div class="item-card__tag-list" data-tag-list>';
         foreach ($tags as $tag) {
@@ -160,7 +182,7 @@ $showEmpty = !$folderExists;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css?v=1.9">
+    <link rel="stylesheet" href="assets/app.css?v=1.13">
 </head>
 <body>
 <header class="app-header">
@@ -405,6 +427,22 @@ $showEmpty = !$folderExists;
                             <span class="section-block__chevron" aria-hidden="true"></span>
                             <h2><?= e($sectionTitle) ?></h2>
                         </button>
+                        <?php if ($bucketKey === 'articleCandidates'): ?>
+                            <div class="section-block__info" data-section-info>
+                                <button type="button"
+                                        class="section-block__info-btn"
+                                        data-section-info-toggle
+                                        aria-expanded="false"
+                                        aria-controls="articles-info-tip"
+                                        title="What Articles are for"
+                                        aria-label="What Articles are for">
+                                    <span aria-hidden="true">i</span>
+                                </button>
+                                <div class="section-block__info-tip" id="articles-info-tip" data-section-info-tip role="tooltip">
+                                    Turn these into a full article with ChatGPT (or similar): expand the thought into a complete, easy-to-digest piece you can publish or reuse.
+                                </div>
+                            </div>
+                        <?php endif; ?>
                         <button type="button"
                                 class="section-block__rearrange"
                                 data-rearrange-toggle
@@ -525,6 +563,21 @@ $showEmpty = !$folderExists;
             </div>
         <?php endif; ?>
     </aside>
+
+    <div class="note-modal" data-note-modal hidden>
+        <div class="note-modal__backdrop" data-note-modal-close tabindex="-1"></div>
+        <div class="note-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
+            <div class="note-modal__header">
+                <h2 id="note-modal-title" data-note-modal-title></h2>
+                <button type="button" class="note-modal__copy" data-note-modal-copy title="Copy full note text" aria-label="Copy full note text">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span>Copy</span>
+                </button>
+                <button type="button" class="note-modal__close" data-note-modal-close aria-label="Close">×</button>
+            </div>
+            <div class="note-modal__body" data-note-modal-body></div>
+        </div>
+    </div>
 <?php endif; ?>
 
 <footer class="app-credits">
@@ -546,6 +599,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js?v=1.11"></script>
+<script src="assets/app.js?v=1.15"></script>
 </body>
 </html>

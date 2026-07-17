@@ -8,19 +8,18 @@
                 "sources": [
                     "braindump.md:3"
                 ],
-                "tags": [
-                    "nginx",
-                    "test a"
-                ]
+                "tags": []
             },
             {
                 "id": "t2",
                 "title": "SSH key deploy checklist (authorized_keys + perms)",
-                "body": "Copy pubkey to authorized_keys, then verify permissions so auth does not silently fail: home/`.ssh` 700, keys 600.",
+                "body": "Copy the pubkey into ~/.ssh/authorized_keys on the host.\nThen lock down permissions or sshd will silently reject the key:\nhome directory 700, ~/.ssh 700, private key 600, authorized_keys 600.\nOwnership must be the login user (not root) on those paths.\nSELinux/AppArmor can still block a “correct” setup — worth checking when debugging.",
                 "sources": [
                     "braindump.md:5"
                 ],
-                "tags": []
+                "tags": [
+                    "test"
+                ]
             },
             {
                 "id": "t3",
@@ -34,7 +33,7 @@
             {
                 "id": "t4",
                 "title": "Certbot nginx cert + renewal timer check",
-                "body": "`certbot certonly --nginx -d example.com`. Renewal is a cron/timer — verify with `systemctl list-timers | grep cert`.",
+                "body": "`certbot certonly --nginx -d example.com`\nRenewal is a cron/timer — verify with `systemctl list-timers | grep cert`.\nIf the timer is missing, reinstall the certbot timer package for your distro.",
                 "sources": [
                     "braindump.md:13",
                     "braindump.md:14"

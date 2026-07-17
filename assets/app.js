@@ -21,7 +21,11 @@
     drawer.classList.toggle("is-open", open);
     backdrop.classList.toggle("is-open", open);
     drawer.setAttribute("aria-hidden", open ? "false" : "true");
-    document.body.style.overflow = open ? "hidden" : "";
+    if (open || isNoteModalOpen()) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
   }
 
   function isEditableTarget(el) {
@@ -60,8 +64,112 @@
     });
   }
 
+  var noteModal = qs("[data-note-modal]");
+  var noteModalTitle = qs("[data-note-modal-title]", noteModal);
+  var noteModalBody = qs("[data-note-modal-body]", noteModal);
+  var noteModalLastFocus = null;
+
+  function setNoteModal(open, title, body) {
+    if (!noteModal) return;
+    if (open) {
+      noteModalLastFocus = document.activeElement;
+      if (noteModalTitle) noteModalTitle.textContent = title || "";
+      if (noteModalBody) noteModalBody.textContent = body || "";
+      noteModal.setAttribute("data-full-text", body || "");
+      noteModal.hidden = false;
+      document.body.style.overflow = "hidden";
+      var closeBtn = qs("[data-note-modal-close].note-modal__close", noteModal);
+      if (closeBtn) closeBtn.focus();
+    } else {
+      noteModal.hidden = true;
+      if (noteModalTitle) noteModalTitle.textContent = "";
+      if (noteModalBody) noteModalBody.textContent = "";
+      noteModal.removeAttribute("data-full-text");
+      if (!drawer || !drawer.classList.contains("is-open")) {
+        document.body.style.overflow = "";
+      }
+      if (noteModalLastFocus && typeof noteModalLastFocus.focus === "function") {
+        noteModalLastFocus.focus();
+      }
+      noteModalLastFocus = null;
+    }
+  }
+
+  function isNoteModalOpen() {
+    return !!(noteModal && !noteModal.hidden);
+  }
+
+  if (noteModal) {
+    noteModal.addEventListener("click", function (e) {
+      if (e.target.closest("[data-note-modal-close]")) {
+        setNoteModal(false);
+        return;
+      }
+      var modalCopyBtn = e.target.closest("[data-note-modal-copy]");
+      if (modalCopyBtn) {
+        var modalText = noteModal.getAttribute("data-full-text") || "";
+        copyText(modalText).then(function () {
+          flashCopyButton(modalCopyBtn);
+        }).catch(function () {
+          // clipboard unavailable
+        });
+      }
+    });
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        if (!document.execCommand("copy")) {
+          reject(new Error("copy failed"));
+        } else {
+          resolve();
+        }
+      } catch (err) {
+        reject(err);
+      } finally {
+        document.body.removeChild(ta);
+      }
+    });
+  }
+
+  function flashCopyButton(btn) {
+    if (!btn) return;
+    var label = qs("span", btn) || btn;
+    var prev = label.textContent;
+    label.textContent = "Copied";
+    btn.classList.add("is-copied");
+    setTimeout(function () {
+      label.textContent = prev;
+      btn.classList.remove("is-copied");
+    }, 1200);
+  }
+
+  function closeSectionInfoTips(except) {
+    qsa("[data-section-info]").forEach(function (wrap) {
+      if (except && wrap === except) return;
+      var toggle = qs("[data-section-info-toggle]", wrap);
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      wrap.classList.remove("is-open");
+    });
+  }
+
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
+      if (isNoteModalOpen()) {
+        setNoteModal(false);
+        return;
+      }
       setDrawer(false);
       return;
     }
@@ -505,27 +613,34 @@
 
     var toggle = document.createElement("button");
     toggle.type = "button";
-    toggle.className = "item-card__move-toggle";
+    toggle.className = "item-card__more-toggle";
     toggle.setAttribute("data-move-toggle", "");
     toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-haspopup", "listbox");
+    toggle.setAttribute("aria-haspopup", "menu");
+    toggle.setAttribute("title", "More actions");
+    toggle.setAttribute("aria-label", "More actions");
     toggle.innerHTML =
-      "<span>Move</span>" +
-      '<svg class="item-card__move-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>';
 
     var menu = document.createElement("div");
-    menu.className = "item-card__move-menu";
+    menu.className = "item-card__more-menu";
     menu.setAttribute("data-move-menu", "");
-    menu.setAttribute("role", "listbox");
+    menu.setAttribute("role", "menu");
     menu.hidden = true;
+
+    var label = document.createElement("div");
+    label.className = "item-card__more-label";
+    label.setAttribute("role", "presentation");
+    label.textContent = "Move to";
+    menu.appendChild(label);
 
     BUCKET_KEYS.forEach(function (key) {
       if (key === bucket) return;
       var option = document.createElement("button");
       option.type = "button";
-      option.className = "item-card__move-option";
+      option.className = "item-card__more-option";
       option.setAttribute("data-move-to", key);
-      option.setAttribute("role", "option");
+      option.setAttribute("role", "menuitem");
       option.textContent = BUCKET_LABELS[key] || key;
       menu.appendChild(option);
     });
@@ -719,6 +834,17 @@
     });
 
     phase2Root.addEventListener("click", function (e) {
+      var infoToggle = e.target.closest("[data-section-info-toggle]");
+      if (infoToggle) {
+        var infoWrap = infoToggle.closest("[data-section-info]");
+        if (!infoWrap) return;
+        var willOpen = !infoWrap.classList.contains("is-open");
+        closeSectionInfoTips(willOpen ? infoWrap : null);
+        infoToggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        infoWrap.classList.toggle("is-open", willOpen);
+        return;
+      }
+
       var collapseBtn = e.target.closest("[data-collapse-toggle]");
       if (collapseBtn) {
         var collapseSection = collapseBtn.closest("[data-section-bucket]");
@@ -780,6 +906,34 @@
         var tagCard = removeBtn.closest(".item-card[data-org-id]");
         if (!tagCard) return;
         removeTagFromItem(tagCard.getAttribute("data-org-id"), removeBtn.getAttribute("data-remove-tag"));
+        return;
+      }
+
+      var readMoreBtn = e.target.closest("[data-read-more]");
+      if (readMoreBtn) {
+        if (readMoreBtn.closest(".is-rearranging")) return;
+        var readCard = readMoreBtn.closest(".item-card[data-org-id]");
+        if (!readCard) return;
+        var readTitle = qs("h3", readCard);
+        setNoteModal(
+          true,
+          readTitle ? readTitle.textContent : "",
+          readCard.getAttribute("data-full-text") || ""
+        );
+        return;
+      }
+
+      var copyBtn = e.target.closest("[data-copy-item]");
+      if (copyBtn) {
+        if (copyBtn.closest(".is-rearranging")) return;
+        var copyCard = copyBtn.closest(".item-card[data-org-id]");
+        if (!copyCard) return;
+        var full = copyCard.getAttribute("data-full-text") || "";
+        copyText(full).then(function () {
+          flashCopyButton(copyBtn);
+        }).catch(function () {
+          // clipboard unavailable
+        });
       }
     });
 
@@ -844,11 +998,15 @@
       if (!e.target.closest("[data-move-wrap]")) {
         closeAllMoveMenus();
       }
+      if (!e.target.closest("[data-section-info]")) {
+        closeSectionInfoTips();
+      }
     });
 
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
         closeAllMoveMenus();
+        closeSectionInfoTips();
         qsa("[data-section-bucket].is-rearranging", phase2Root).forEach(function (section) {
           finishRearrange(section, null);
         });
