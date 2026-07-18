@@ -35,7 +35,7 @@ function load_config(): array
 
     $folder = isset($data['inputFolder']) ? trim((string) $data['inputFolder']) : '';
     $phase = isset($data['phase']) ? (int) $data['phase'] : 1;
-    if ($phase !== 2) {
+    if ($phase !== 2 && $phase !== 3) {
         $phase = 1;
     }
 
@@ -277,6 +277,8 @@ function normalize_organized_item(array $item, string $bucket): array
 
     $body = (string) ($item['body'] ?? '');
     $why = (string) ($item['why'] ?? '');
+    $checked = !empty($item['checked']);
+
     if ($bucket === 'articleCandidates') {
         if ($why === '' && $body !== '') {
             $why = $body;
@@ -287,6 +289,7 @@ function normalize_organized_item(array $item, string $bucket): array
             'why' => $why,
             'sources' => $sourcesOut,
             'tags' => normalize_tags($item['tags'] ?? []),
+            'checked' => $checked,
         ];
     } else {
         if ($body === '' && $why !== '') {
@@ -298,10 +301,57 @@ function normalize_organized_item(array $item, string $bucket): array
             'body' => $body,
             'sources' => $sourcesOut,
             'tags' => normalize_tags($item['tags'] ?? []),
+            'checked' => $checked,
         ];
     }
 
     return $normalized;
+}
+
+/**
+ * @param array<string, mixed>|null $phase1
+ * @param list<string> $noteFiles
+ * @return array{files: int, uncertain: int, youtube: int}
+ */
+function phase1_review_counts(?array $phase1, array $noteFiles): array
+{
+    $uncertain = 0;
+    $youtube = 0;
+    if (is_array($phase1) && isset($phase1['files']) && is_array($phase1['files'])) {
+        foreach ($phase1['files'] as $fileData) {
+            if (!is_array($fileData)) {
+                continue;
+            }
+            $lines = $fileData['lines'] ?? [];
+            if (!is_array($lines)) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+                $marks = $line['marks'] ?? [];
+                if (is_array($marks)) {
+                    foreach ($marks as $mark) {
+                        if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
+                            $uncertain++;
+                            break;
+                        }
+                    }
+                }
+                $yt = $line['youtube'] ?? null;
+                if (is_array($yt) && !empty($yt['added'])) {
+                    $youtube++;
+                }
+            }
+        }
+    }
+
+    return [
+        'files' => count($noteFiles),
+        'uncertain' => $uncertain,
+        'youtube' => $youtube,
+    ];
 }
 
 /**

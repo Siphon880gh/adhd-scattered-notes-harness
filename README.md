@@ -11,15 +11,19 @@ For ADHD minds that jot notes everywhere in real time-and wishes to turn the mes
 
 A Cursor / Claude Code harness for turning a folder of ad-hoc notes into grouped tasks and reference knowledge—without losing detail.
 
-The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 adjustments in the browser (move / tag / reorder), then return to the chat for merges and fidelity fixes.
+The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 / Phase 3 adjustments in the browser (move / tag / reorder — saved into `phase2.json`), then return to the chat for merges, fidelity fixes, or Phase 3 auto-tagging.
 
 ## Why this exists for ADHD
 
 If you have ADHD, notes rarely land in one place. You jot something in a `.txt` file, sketch an idea in a `.md` note, save a half-formed thought in another file—and weeks later you have a folder of fragments with no clear through-line.
 
-This harness meets that workflow: dump scattered notes first, process them in two fidelity-preserving phases later.
+This harness is for that chaotic, on-the-fly jotting of a fast ADHD brain: dump first, then let AI sort it into something usable—**actionable** tasks or **referable** knowledge.
 
-The skill treats a note as a line, a group of lines, or a whole file, and uses `---` as the separator between notes in a file. It understands that empty lines—or just the next line—may be a separate thought entirely. It also understands the same thought may be broken across multiple files. You do not need a clean system first; dump first, AI will suggest organization later.
+It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Empty lines or dashes (`---`) as dividers are fine—AI is there to figure out the boundaries and group related thoughts. You can even paste an entire article into a note full of other random thoughts, as long as you made a reasonable effort to mark it as a different idea (separated by empty lines or dashes). If the article already has dash lines, add twice the dash lines to separate the article from your other thoughts (e.g. article uses `---` → wrap it with `------`).
+
+Shorthands and symbols are welcome too. When something is unclear, AI asks you to clarify, then builds a dictionary of your shorthands (`shorthands.md`) so it can read your notes the way you write them.
+
+See also: [README-Tips-How your scattered notes should be.md](README-Tips-How%20your%20scattered%20notes%20should%20be.md)
 
 ## Roles
 
@@ -27,7 +31,7 @@ The skill treats a note as a line, a group of lines, or a whole file, and uses `
 |-------|------|
 | `.agents/skills/scattered-notes` | Agent skill: pick folder, write artifacts, update config |
 | `app.config.json` | Points the app at one `inputs/` folder and the active phase |
-| `index.php` | Phase 1 reviewer + Phase 2 interactive organizer (saves into `phase2.json`) |
+| `index.php` | Phase 1 reviewer + Phase 2/3 interactive organizer (saves into `phase2.json`) |
 
 There is **no folder switcher in the app**. The skill sets `app.config.json`; the app shows whatever that file points at.
 
@@ -54,7 +58,7 @@ inputs/
     note-one.md
     random-thought.txt
     phase1.json        # uncertain marks + YouTube descriptors
-    phase2.json        # organized notes + per-line blame map
+    phase2.json        # organized notes + blame map + tags (Phase 2/3)
 ```
 
 `app.config.json`:
@@ -66,7 +70,9 @@ inputs/
 }
 ```
 
-## Two phases
+`phase` may be `1`, `2`, or `3`.
+
+## Three phases
 
 ### Phase 1 — clarify before organize
 
@@ -78,15 +84,22 @@ Review marks in `index.php`. Explain shorthand in the agent chat; the skill upda
 
 When Phase 1 is done, the skill groups notes into **Scattered**, **Reference**, and **Articles** (stored in `phase2.json` as `tasks`, `reference`, and `articleCandidates`). Every source line is accounted for in a blame map so details do not disappear silently.
 
-In the app you can:
+Visit the web app and check that things are properly organized. In the app you can:
 
 - **Move** items between Scattered / Reference / Articles (Move dropdown on each card)
-- **Tag** any item on the right; new tags appear in the **Filter** bar at the top
+- **Green-check** items as you review them (circle next to the title; saved into `phase2.json`)
+- **Tag** any item on the right; new tags appear in the **Filter** bar at the top (optional — Phase 3 will tag by area for you)
 - **Collapse / expand** each panel from its header
 - **Rearrange** items inside a panel: click the ↔ icon, drag cards, then release (or click ↔ again) to finish — order is saved
 - Open original notes with per-line accounting via the hamburger (**B** toggles that sidebar open/closed)
 
-Browser edits write back to `phase2.json`. Return to Cursor / Claude Code for merges or fidelity fixes (e.g. “Merge t1 and t3”).
+Browser edits POST to `index.php?action=save-phase2` and write back to `phase2.json` so Cursor / Claude Code can see them. Return to chat for merges, fidelity fixes, or to start Phase 3.
+
+### Phase 3 — auto-tag by area
+
+When Phase 2 looks good, the skill re-reads `phase2.json` (including any browser edits) and tags items that belong in the same area. Tags can chunk up/down an idea (supercategory / category / subcategory); an item may have more than one tag. Spaces in tags are fine; prefer short phrases over long ones. User-added tags are preserved and merged.
+
+Refresh the app to review tags; you can still edit tags/moves (same save path). Return to chat to refine tagging.
 
 ## Skill handoff
 
@@ -102,13 +115,14 @@ Same harness, stepped explicitly in chat:
 
 1. `/scattered-notes Start` — list folders under `inputs/`, pick one (or reset sample / use your own notes)
 2. `/scattered-notes Lets start Phase 1` — mark uncertain shorthand/symbols and enrich YouTube links; review in `index.php`, then return to chat to explain marks or confirm
-3. `/scattered-notes Lets go to Phase 2` — organize into Scattered / Reference / Articles with per-line blame; review and lightly edit in `index.php`, then return to chat to refine
+3. `/scattered-notes Lets go to Phase 2` — organize into Scattered / Reference / Articles with per-line blame; review and lightly edit in `index.php`, then return to chat to refine or advance
+4. `/scattered-notes Lets go to Phase 3` — auto-tag related items by area; review tags in `index.php`, then return to chat to refine
 
 Between steps, serve and open the app as usual (`php -S localhost:8765` → `http://localhost:8765`).
 
 ## Who this is for
 
-Anyone who captures thoughts in bursts and organizes later—or never quite gets to the organizing part. The harness meets you where your notes already are.
+Anyone who captures thoughts in bursts and organizes later—or never quite gets to the organizing part. Messy files, personal shorthand, split subjects, and divider chaos are expected. The harness meets you where your notes already are and turns them into something you can act on or look up.
 
 ## How it looks / how to use
 

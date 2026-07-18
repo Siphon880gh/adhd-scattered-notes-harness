@@ -2,153 +2,165 @@
     "organized": {
         "tasks": [
             {
-                "id": "t2",
-                "title": "SSH key deploy checklist (authorized_keys + perms)",
-                "body": "Copy the pubkey into ~/.ssh/authorized_keys on the host.\nThen lock down permissions or sshd will silently reject the key:\nhome directory 700, ~/.ssh 700, private key 600, authorized_keys 600.\nOwnership must be the login user (not root) on those paths.\nSELinux/AppArmor can still block a “correct” setup — worth checking when debugging.",
-                "sources": [
-                    "braindump.md:5"
-                ],
-                "tags": [
-                    "test"
-                ]
-            },
-            {
                 "id": "t1",
-                "title": "Clarify nginx -t, reload vs restart",
-                "body": "Figure out what `nginx -t` actually validates, and lock in when to use reload vs restart.",
+                "title": "Find out: nginx -t validation vs reload/restart",
+                "body": "Look up what `nginx -t` actually validates, and clarify reload vs restart again.\n\n(wtf = I don't know what it means — go find out)",
                 "sources": [
                     "braindump.md:3"
                 ],
                 "tags": [
+                    "test"
+                ],
+                "checked": true
+            },
+            {
+                "id": "t2",
+                "title": "SSH keys: authorized_keys + permissions",
+                "body": "Copy pub to authorized_keys, and also check permissions 700/600 — wrong perms silently fail.",
+                "sources": [
+                    "braindump.md:5"
+                ],
+                "tags": [
                     "test2"
-                ]
+                ],
+                "checked": true
             },
             {
                 "id": "t3",
-                "title": "UFW: open 80/443 without locking out SSH",
-                "body": "Allow 80/443, keep 22 open, then enable ufw so you do not lock yourself out.",
+                "title": "UFW: allow 80/443 (and 22) then enable",
+                "body": "Allow 80/443 then enable; don't lock yourself out of 22.",
                 "sources": [
                     "braindump.md:11"
                 ],
-                "tags": [
-                    "test3"
-                ]
+                "tags": [],
+                "checked": true
             },
             {
                 "id": "t4",
-                "title": "Certbot nginx cert + renewal timer check",
-                "body": "`certbot certonly --nginx -d example.com`\nRenewal is a cron/timer — verify with `systemctl list-timers | grep cert`.\nIf the timer is missing, reinstall the certbot timer package for your distro.",
+                "title": "Certbot nginx cert + check renewal timer",
+                "body": "`certbot certonly --nginx -d example.com`\n\nRenewal is a cron/timer — check with `systemctl list-timers | grep cert`.",
                 "sources": [
                     "braindump.md:13",
                     "braindump.md:14"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": true
             },
             {
                 "id": "t5",
                 "title": "Deploy dist with rsync (dry-run first)",
-                "body": "`rsync -avz --delete ./dist/ user@host:/var/www/app/` — always dry-run with `-n` first.",
+                "body": "`rsync -avz --delete ./dist/ user@host:/var/www/app/`\n\nDRY RUN FIRST with `-n`.",
                 "sources": [
                     "half-thoughts.md:1",
                     "half-thoughts.md:2"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": true
             },
             {
                 "id": "t6",
-                "title": "Postgres dump/restore with custom format",
-                "body": "Dump with `pg_dump -Fc`, restore with `pg_restore -d ...`. Avoid plain SQL for big databases.",
-                "sources": [
-                    "half-thoughts.md:10"
-                ],
-                "tags": []
-            },
-            {
-                "id": "t7",
-                "title": "Clean up dead Docker containers (careful with volumes)",
-                "body": "`docker ps -a | grep dead`, then prune only if you are sure volumes are safe.",
+                "title": "Clean dead Docker containers; prune carefully",
+                "body": "`docker ps -a | grep dead`\n\nPrune? careful with volumes.",
                 "sources": [
                     "random.txt:1",
                     "random.txt:2"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             },
             {
-                "id": "t8",
+                "id": "t7",
                 "title": "Pick one Node version manager (asdf / nvm / mise)",
-                "body": "Choose asdf, nvm, or mise for Node on the laptop; stop installing Node globally with brew every time.",
+                "body": "asdf vs nvm vs mise — pick one for Node on laptop; stop installing globally with brew every time.",
                 "sources": [
                     "random.txt:10"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             },
             {
-                "id": "t9",
-                "title": "Relearn Docker EXPOSE vs publish (-p)",
-                "body": "Clarify difference between Dockerfile `EXPOSE` and publishing ports with `-p`.",
+                "id": "t8",
+                "title": "Find out: Docker EXPOSE vs publishing -p",
+                "body": "Look up the difference between EXPOSE and publishing with `-p` again.\n\n(WTF = I don't know what it means — go find out)",
                 "sources": [
                     "random.txt:14"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             }
         ],
         "reference": [
             {
                 "id": "r1",
-                "title": "journalctl unit follow shortcut",
-                "body": "`journalctl -u nginx -f` — use `-u`, not `--unit`, when tired.",
+                "title": "journalctl follow nginx unit",
+                "body": "`journalctl -u nginx -f` — remember `-u` not `--unit` when tired.",
                 "sources": [
                     "braindump.md:7"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": true
             },
             {
                 "id": "r2",
-                "title": "YouTube link (metadata placeholder)",
-                "body": "https://youtu.be/dQw4w9WgXcQ — kept from dump; enrich title/about in Phase 1 if needed.",
+                "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+                "body": "https://youtu.be/dQw4w9WgXcQ\n\nOfficial music video for Rick Astley's Never Gonna Give You Up (4K Remaster), commonly used as a placeholder/meme link in dumps.",
                 "sources": [
                     "braindump.md:9"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": true
             },
             {
                 "id": "r3",
-                "title": "tmux quick keys",
-                "body": "Ctrl-b d detach, Ctrl-b c new window, Ctrl-b % split.",
+                "title": "tmux common keys",
+                "body": "Ctrl-b d detach, Ctrl-b c new window, Ctrl-b % split",
                 "sources": [
                     "half-thoughts.md:4"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             },
             {
                 "id": "r4",
-                "title": "Find TODOs excluding node_modules",
+                "title": "grep TODOs excluding node_modules",
                 "body": "`grep -R \"TODO\" --exclude-dir=node_modules .`",
                 "sources": [
                     "half-thoughts.md:6"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             },
             {
                 "id": "r5",
-                "title": "compose depends_on ≠ healthy",
-                "body": "`depends_on` does not wait for healthy unless you set a health condition.",
+                "title": "Postgres dump/restore (custom format)",
+                "body": "Dump with `pg_dump -Fc`, restore `pg_restore -d ...` — don't use plain SQL for big DBs.",
+                "sources": [
+                    "half-thoughts.md:10"
+                ],
+                "tags": [],
+                "checked": false
+            },
+            {
+                "id": "r6",
+                "title": "Compose depends_on vs healthy",
+                "body": "`depends_on` does NOT wait for healthy unless you set a condition.",
                 "sources": [
                     "random.txt:6"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             }
         ],
         "articleCandidates": [
             {
                 "id": "a1",
                 "title": "Permissions that look fine but break SSH/nginx",
-                "why": "Explicit article idea in notes: 700 home, 700 .ssh, 600 keys, plus SELinux/AppArmor footnote — pairs with the SSH checklist task.",
+                "why": "Explicit article idea covering 700 home, 700 .ssh, 600 keys, plus SELinux/AppArmor footnote — ties to the SSH permissions task.",
                 "sources": [
-                    "half-thoughts.md:8",
-                    "braindump.md:5"
+                    "half-thoughts.md:8"
                 ],
-                "tags": []
+                "tags": [],
+                "checked": false
             }
         ]
     },
@@ -159,14 +171,14 @@
                 "text": "# linux / server scraps",
                 "fate": "dropped_noise",
                 "to": [],
-                "comment": "batch title / section header"
+                "comment": "file heading / batch label"
             },
             {
                 "n": 2,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 3,
@@ -175,7 +187,7 @@
                 "to": [
                     "t1"
                 ],
-                "comment": "nginx validate/reload question"
+                "comment": "open question → research task"
             },
             {
                 "n": 4,
@@ -189,10 +201,9 @@
                 "text": "ssh keys: copy pub to authorized_keys but ALSO check permissions 700/600 or it silently fails",
                 "fate": "mapped",
                 "to": [
-                    "t2",
-                    "a1"
+                    "t2"
                 ],
-                "comment": "SSH perms checklist; also supports article candidate"
+                "comment": "ssh setup task"
             },
             {
                 "n": 6,
@@ -208,7 +219,7 @@
                 "to": [
                     "r1"
                 ],
-                "comment": "journalctl tip"
+                "comment": "command cheat"
             },
             {
                 "n": 8,
@@ -224,7 +235,7 @@
                 "to": [
                     "r2"
                 ],
-                "comment": "YouTube URL kept as reference"
+                "comment": "YouTube enrichment from phase1"
             },
             {
                 "n": 10,
@@ -240,7 +251,7 @@
                 "to": [
                     "t3"
                 ],
-                "comment": "ufw rules task"
+                "comment": "firewall task"
             },
             {
                 "n": 12,
@@ -256,7 +267,7 @@
                 "to": [
                     "t4"
                 ],
-                "comment": "certbot issue command"
+                "comment": "merged with renewal note"
             },
             {
                 "n": 14,
@@ -265,7 +276,7 @@
                 "to": [
                     "t4"
                 ],
-                "comment": "renewal verification"
+                "comment": "merged into certbot task"
             }
         ],
         "half-thoughts.md": [
@@ -276,7 +287,7 @@
                 "to": [
                     "t5"
                 ],
-                "comment": "rsync deploy command"
+                "comment": "deploy command"
             },
             {
                 "n": 2,
@@ -285,14 +296,14 @@
                 "to": [
                     "t5"
                 ],
-                "comment": "dry-run reminder"
+                "comment": "safety step for rsync"
             },
             {
                 "n": 3,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 4,
@@ -301,14 +312,14 @@
                 "to": [
                     "r3"
                 ],
-                "comment": "tmux cheatsheet"
+                "comment": "tmux cheat"
             },
             {
                 "n": 5,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 6,
@@ -317,14 +328,14 @@
                 "to": [
                     "r4"
                 ],
-                "comment": "grep TODO recipe"
+                "comment": "search pattern"
             },
             {
                 "n": 7,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 8,
@@ -338,18 +349,18 @@
             {
                 "n": 9,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 10,
                 "text": "pg: dump with pg_dump -Fc, restore pg_restore -d ... don't use plain sql for big dbs",
-                "fate": "mapped",
+                "fate": "reference",
                 "to": [
-                    "t6"
+                    "r5"
                 ],
-                "comment": "postgres dump/restore"
+                "comment": "postgres dump/restore note"
             }
         ],
         "random.txt": [
@@ -358,7 +369,7 @@
                 "text": "docker ps -a | grep dead",
                 "fate": "merged",
                 "to": [
-                    "t7"
+                    "t6"
                 ],
                 "comment": "find dead containers"
             },
@@ -367,16 +378,16 @@
                 "text": "prune? careful volumes",
                 "fate": "merged",
                 "to": [
-                    "t7"
+                    "t6"
                 ],
                 "comment": "prune caution"
             },
             {
                 "n": 3,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 4,
@@ -388,25 +399,25 @@
             {
                 "n": 5,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 6,
                 "text": "compose: depends_on does NOT wait for healthy unless condition",
                 "fate": "reference",
                 "to": [
-                    "r5"
+                    "r6"
                 ],
-                "comment": "compose health caveat"
+                "comment": "compose gotcha"
             },
             {
                 "n": 7,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 8,
@@ -418,25 +429,25 @@
             {
                 "n": 9,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 10,
                 "text": "asdf vs nvm vs mise — pick one for node on laptop, stop installing globally with brew every time",
                 "fate": "mapped",
                 "to": [
-                    "t8"
+                    "t7"
                 ],
-                "comment": "pick a version manager"
+                "comment": "version manager decision"
             },
             {
                 "n": 11,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 12,
@@ -448,18 +459,18 @@
             {
                 "n": 13,
                 "text": "",
-                "fate": "separator",
+                "fate": "dropped_noise",
                 "to": [],
-                "comment": "blank line"
+                "comment": "blank"
             },
             {
                 "n": 14,
                 "text": "WTF is the difference between EXPOSE and publishing -p again",
                 "fate": "mapped",
                 "to": [
-                    "t9"
+                    "t8"
                 ],
-                "comment": "EXPOSE vs -p question"
+                "comment": "open question → research task"
             }
         ]
     },
@@ -469,15 +480,8 @@
             "name": "test"
         },
         {
-            "type": "divider"
-        },
-        {
             "type": "tag",
             "name": "test2"
-        },
-        {
-            "type": "tag",
-            "name": "test3"
         }
     ]
 }

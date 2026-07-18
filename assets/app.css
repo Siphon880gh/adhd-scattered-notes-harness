@@ -20,6 +20,7 @@
   --radius: 6px;
   --drawer-width: min(440px, 92vw);
   --app-header-height: 3.75rem;
+  --bucket-counts-height: 2.5rem;
 }
 
 *,
@@ -380,6 +381,76 @@ body.is-showing-shortcuts .app-header__menu > svg {
   gap: 1.25rem;
 }
 
+.bucket-counts {
+  position: sticky;
+  top: var(--app-header-height);
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+  box-sizing: border-box;
+  height: var(--bucket-counts-height);
+  margin: 0;
+  padding: 0 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: var(--bg);
+  border-bottom: 1px solid rgba(58, 65, 75, 0.55);
+}
+
+.main .bucket-counts {
+  margin: 0;
+  padding: 0;
+}
+
+.bucket-counts__item {
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+.bucket-counts__item--link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0.15rem 0.2rem;
+  margin: -0.15rem -0.2rem;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.bucket-counts__item--link:hover {
+  background: rgba(110, 181, 255, 0.12);
+  color: #fff;
+}
+
+.bucket-counts__item--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bucket-counts__item span {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.bucket-counts__divider {
+  width: 1px;
+  height: 1.1rem;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.section-block {
+  scroll-margin-top: calc(var(--app-header-height) + var(--bucket-counts-height) + 0.25rem);
+}
+
 .tag-filter {
   display: flex;
   flex-wrap: wrap;
@@ -602,14 +673,14 @@ body.is-showing-shortcuts .app-header__menu > svg {
 
 .section-block__header {
   position: sticky;
-  top: var(--app-header-height);
+  top: calc(var(--app-header-height) + var(--bucket-counts-height));
   z-index: 12;
   display: flex;
   align-items: center;
   gap: 0.35rem;
   margin: 0 0 0.5rem;
-  padding: 0.45rem 0.15rem;
-  background: linear-gradient(180deg, var(--bg) 72%, rgba(26, 29, 33, 0.94));
+  padding: 0.35rem 0.15rem;
+  background: var(--bg);
   border-bottom: 1px solid rgba(58, 65, 75, 0.55);
 }
 
@@ -617,7 +688,6 @@ body.is-showing-shortcuts .app-header__menu > svg {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  flex: 1;
   min-width: 0;
   border: 0;
   background: transparent;
@@ -684,7 +754,7 @@ body.is-showing-shortcuts .app-header__menu > svg {
 .section-block__info-tip {
   position: absolute;
   top: calc(100% + 0.4rem);
-  right: 0;
+  left: 0;
   z-index: 14;
   width: min(18.5rem, 72vw);
   padding: 0.65rem 0.75rem;
@@ -704,7 +774,8 @@ body.is-showing-shortcuts .app-header__menu > svg {
   display: block;
 }
 
-.section-block__rearrange {
+.section-block__rearrange,
+.section-block__copy {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -718,7 +789,12 @@ body.is-showing-shortcuts .app-header__menu > svg {
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 
-.section-block__rearrange:hover {
+.section-block__rearrange {
+  margin-left: auto;
+}
+
+.section-block__rearrange:hover,
+.section-block__copy:hover {
   color: var(--accent);
   border-color: var(--border);
 }
@@ -728,6 +804,12 @@ body.is-showing-shortcuts .app-header__menu > svg {
   border-color: var(--accent);
   background: rgba(110, 181, 255, 0.12);
   animation: rearrange-pulse 1.1s ease-in-out infinite;
+}
+
+.section-block__copy.is-copied {
+  color: var(--added);
+  border-color: rgba(61, 214, 140, 0.55);
+  background: rgba(61, 214, 140, 0.12);
 }
 
 .section-block.is-rearranging {
@@ -825,6 +907,13 @@ body.is-showing-shortcuts .app-header__menu > svg {
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.15s ease;
 }
 
+.item-card.is-checked {
+  border-color: rgba(61, 214, 140, 0.45);
+  background:
+    linear-gradient(180deg, rgba(61, 214, 140, 0.08), transparent 42%),
+    var(--bg-panel);
+}
+
 .item-card[hidden] {
   display: none;
 }
@@ -840,11 +929,56 @@ body.is-showing-shortcuts .app-header__menu > svg {
   margin-bottom: 0.35rem;
 }
 
+.item-card__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  margin-top: 0.05rem;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.item-card__check:hover {
+  border-color: rgba(61, 214, 140, 0.7);
+  background: rgba(61, 214, 140, 0.1);
+  color: var(--added);
+}
+
+.item-card__check[aria-pressed="true"] {
+  border-color: rgba(61, 214, 140, 0.85);
+  background: rgba(61, 214, 140, 0.22);
+  color: var(--added);
+  box-shadow: 0 0 0 1px rgba(61, 214, 140, 0.2);
+}
+
+.item-card.is-rearranging .item-card__check,
+.section-block.is-rearranging .item-card__check {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 .item-card h3 {
   margin: 0;
   flex: 1;
   min-width: 0;
   font-size: 1rem;
+  cursor: pointer;
+}
+
+.item-card.is-rearranging h3,
+.section-block.is-rearranging .item-card h3 {
+  cursor: grab;
+}
+
+.item-card.is-checked h3 {
+  color: #c8f0d9;
 }
 
 .item-card p,
