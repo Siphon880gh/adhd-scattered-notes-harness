@@ -11,7 +11,7 @@ For ADHD minds that jot notes everywhere in real time-and wishes to turn the mes
 
 A Cursor / Claude Code harness for turning a folder of ad-hoc notes into grouped tasks and reference knowledge—without losing detail.
 
-The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 / Phase 3 adjustments in the browser (move / tag / reorder — saved into `phase2.json`), then return to the chat for merges, fidelity fixes, or Phase 3 auto-tagging.
+The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 adjustments in the browser (move / tag / reorder / Suggest / green-check — saved into `phase2.json` or `phase2-suggestions.md`), then return to the chat for merges, fidelity fixes, or Phase 3 auto-tagging. Phase 3 locks review controls and is mainly **filter + Copy** into your permanent notes app.
 
 ## Why this exists for ADHD
 
@@ -57,8 +57,9 @@ inputs/
   whatname/
     note-one.md
     random-thought.txt
-    phase1.json        # uncertain marks + YouTube descriptors
-    phase2.json        # organized notes + blame map + tags (Phase 2/3)
+    phase1.json              # uncertain marks + YouTube descriptors
+    phase2.json              # organized notes + blame map + tags (Phase 2/3)
+    phase2-suggestions.md    # optional: your Suggest notes for the next Phase 2 pass
 ```
 
 `app.config.json`:
@@ -88,18 +89,19 @@ Visit the web app and check that things are properly organized. In the app you c
 
 - **Move** items between Scattered / Reference / Articles (Move dropdown on each card)
 - **Green-check** items as you review them (circle next to the title; saved into `phase2.json`)
+- **Suggest** on any card (and on the Reference panel header) — tell the AI how to change a note (rewrite, merge, move, keep a detail); saved to `phase2-suggestions.md` for the next pass
 - **Tag** any item on the right; new tags appear in the **Filter** bar at the top (optional — Phase 3 will tag by area for you)
 - **Collapse / expand** each panel from its header
 - **Rearrange** items inside a panel: click the ↔ icon, drag cards, then release (or click ↔ again) to finish — order is saved
 - Open original notes with per-line accounting via the hamburger (**B** toggles that sidebar open/closed)
 
-Browser edits POST to `index.php?action=save-phase2` and write back to `phase2.json` so Cursor / Claude Code can see them. Return to chat for merges, fidelity fixes, or to start Phase 3.
+Panel moves/tags POST to `index.php?action=save-phase2` (`phase2.json`). Suggest notes POST to `index.php?action=save-suggestions` (`phase2-suggestions.md`). Return to chat for merges, fidelity fixes, or to start Phase 3 — the skill reads your suggestions when revising Phase 2.
 
-### Phase 3 — auto-tag by area
+### Phase 3 — auto-tag by area (locked)
 
-When Phase 2 looks good, the skill re-reads `phase2.json` (including any browser edits) and tags items that belong in the same area. Tags can chunk up/down an idea (supercategory / category / subcategory); an item may have more than one tag. Spaces in tags are fine; prefer short phrases over long ones. User-added tags are preserved and merged.
+When Phase 2 looks good, the skill applies any pending `phase2-suggestions.md` notes, re-reads `phase2.json` (including browser edits), and tags items that belong in the same area. It also writes a `filterLayout` that groups related tags and inserts dividers between major areas. Tags can chunk up/down an idea (supercategory / category / subcategory); an item may have more than one tag. Spaces in tags are fine; prefer short phrases over long ones. User-added tags are preserved and merged.
 
-Refresh the app to review tags; you can still edit tags/moves (same save path). Return to chat to refine tagging.
+Refresh the app: **Suggest** and green-check are off. Filter by tag and **Copy** cards (or whole panels) into your permanent notes app. Tag/move tweaks still save; return to chat only if you need tag refinements.
 
 ## Skill handoff
 
@@ -116,7 +118,7 @@ Same harness, stepped explicitly in chat:
 1. `/scattered-notes Start` — list folders under `inputs/`, pick one (or reset sample / use your own notes)
 2. `/scattered-notes Lets start Phase 1` — mark uncertain shorthand/symbols and enrich YouTube links; review in `index.php`, then return to chat to explain marks or confirm
 3. `/scattered-notes Lets go to Phase 2` — organize into Scattered / Reference / Articles with per-line blame; review and lightly edit in `index.php`, then return to chat to refine or advance
-4. `/scattered-notes Lets go to Phase 3` — auto-tag related items by area; review tags in `index.php`, then return to chat to refine
+4. `/scattered-notes Lets go to Phase 3` — apply pending suggestions if any, auto-tag by area; in `index.php` filter + Copy into your notes app (Suggest / check locked)
 
 Between steps, serve and open the app as usual (`php -S localhost:8765` → `http://localhost:8765`).
 

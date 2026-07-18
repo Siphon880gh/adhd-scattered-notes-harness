@@ -56,6 +56,41 @@ if (
     exit;
 }
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'save-suggestions'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase !== 2) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Suggestions are only available in Phase 2.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with panel and/or items.']);
+        exit;
+    }
+
+    $suggestions = normalize_phase2_suggestions($payload);
+    if (!save_phase2_suggestions($dir, $suggestions)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write phase2-suggestions.md.']);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'suggestions' => $suggestions,
+    ]);
+    exit;
+}
+
 $noteFiles = $folderExists ? list_note_files($dir) : [];
 $activeFile = isset($_GET['file']) ? (string) $_GET['file'] : '';
 if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
@@ -64,6 +99,9 @@ if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
 
 $phase1 = $folderExists ? load_json_file($dir . '/phase1.json') : null;
 $phase2 = $folderExists ? load_json_file($dir . '/phase2.json') : null;
+$phase2Suggestions = $folderExists
+    ? load_phase2_suggestions($dir)
+    : normalize_phase2_suggestions(null);
 
 /**
  * @return array<string, string>
@@ -119,8 +157,10 @@ function render_count_bar(array $items, string $ariaLabel): void
 
 /**
  * @param list<array<string, mixed>> $items
+ * @param array<string, string> $itemSuggestions
+ * @param bool $reviewLocked Phase 3: no Suggest / green-check controls
  */
-function render_item_cards(array $items, string $bucket, string $emptyLabel): void
+function render_item_cards(array $items, string $bucket, string $emptyLabel, array $itemSuggestions = [], bool $reviewLocked = false): void
 {
     $labels = phase2_bucket_labels();
     echo '<p class="muted" data-empty-bucket="' . e($bucket) . '"' . ($items === [] ? '' : ' hidden') . '>' . e($emptyLabel) . '</p>';
@@ -147,9 +187,11 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel): vo
         }
         $tags = normalize_tags($item['tags'] ?? []);
         $checked = !empty($item['checked']);
+        $suggestion = ($id !== '' && isset($itemSuggestions[$id])) ? (string) $itemSuggestions[$id] : '';
+        $hasSuggestion = !$reviewLocked && $suggestion !== '';
         $tagAttr = htmlspecialchars(json_encode($tags, JSON_UNESCAPED_UNICODE), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $fullTextAttr = htmlspecialchars($body, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $attrs = 'class="item-card' . ($checked ? ' is-checked' : '') . '" data-bucket="' . e($bucket) . '"';
+        $attrs = 'class="item-card' . ($checked ? ' is-checked' : '') . ($hasSuggestion ? ' has-suggestion' : '') . '" data-bucket="' . e($bucket) . '"';
         if ($id !== '') {
             $attrs .= ' id="org-' . e($id) . '" data-org-id="' . e($id) . '"';
         }
@@ -159,9 +201,11 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel): vo
         echo '<article ' . $attrs . '>';
         echo '<div class="item-card__main">';
         echo '<div class="item-card__title-row">';
-        echo '<button type="button" class="item-card__check" data-check-item aria-pressed="' . ($checked ? 'true' : 'false') . '" title="' . ($checked ? 'Unmark as reviewed' : 'Mark as reviewed') . '" aria-label="' . ($checked ? 'Unmark as reviewed' : 'Mark as reviewed') . '">';
-        echo '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
-        echo '</button>';
+        if (!$reviewLocked) {
+            echo '<button type="button" class="item-card__check" data-check-item aria-pressed="' . ($checked ? 'true' : 'false') . '" title="' . ($checked ? 'Unmark as reviewed' : 'Mark as reviewed') . '" aria-label="' . ($checked ? 'Unmark as reviewed' : 'Mark as reviewed') . '">';
+            echo '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
+            echo '</button>';
+        }
         echo '<h3>' . e($title) . '</h3>';
         echo '<button type="button" class="item-card__copy" data-copy-item title="Copy full note text" aria-label="Copy full note text">';
         echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
@@ -193,6 +237,21 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel): vo
         if ($sources !== []) {
             $srcText = implode(', ', array_map('strval', $sources));
             echo '<div class="item-card__meta">' . e($srcText) . '</div>';
+        }
+        if (!$reviewLocked) {
+            $suggestFieldId = 'suggest-' . ($id !== '' ? $id : ('tmp-' . substr(md5($title . $body), 0, 8)));
+            echo '<div class="item-card__suggest" data-item-suggest>';
+            echo '<button type="button" class="item-card__suggest-toggle" data-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for AI">';
+            echo '<span class="item-card__suggest-label">Suggest</span>';
+            if ($hasSuggestion) {
+                echo '<span class="item-card__suggest-dot" aria-hidden="true"></span>';
+            }
+            echo '</button>';
+            echo '<div class="item-card__suggest-panel" data-suggest-panel hidden>';
+            echo '<label class="item-card__suggest-caption" for="' . e($suggestFieldId) . '">Tell the AI how to change this note</label>';
+            echo '<textarea class="item-card__suggest-input" data-suggest-input id="' . e($suggestFieldId) . '" rows="3" maxlength="4000" placeholder="e.g. rewrite title, merge with t3, move to Reference, keep the permissions detail…">' . e($suggestion) . '</textarea>';
+            echo '</div>';
+            echo '</div>';
         }
         echo '</div>';
         echo '<aside class="item-card__actions" aria-label="Item actions">';
@@ -227,10 +286,18 @@ $showEmpty = !$folderExists;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css?v=1.23">
+    <link rel="stylesheet" href="assets/app.css?v=1.25">
 </head>
 <body>
 <header class="app-header">
+    <a href="index.php" class="app-header__brand">Scattered Notes</a>
+    <div class="app-header__meta">
+        <?php if ($showEmpty): ?>
+            no folder configured
+        <?php else: ?>
+            inputs/<?= e($folder) ?> · phase <?= (int) $phase ?>
+        <?php endif; ?>
+    </div>
     <?php if (!$showEmpty && $phase === 2): ?>
         <button type="button"
                 class="app-header__menu"
@@ -244,14 +311,6 @@ $showEmpty = !$folderExists;
             <span class="shortcut-hint" data-shortcut-hint aria-hidden="true">B</span>
         </button>
     <?php endif; ?>
-    <a href="index.php" class="app-header__brand">Scattered Notes</a>
-    <div class="app-header__meta">
-        <?php if ($showEmpty): ?>
-            no folder configured
-        <?php else: ?>
-            inputs/<?= e($folder) ?> · phase <?= (int) $phase ?>
-        <?php endif; ?>
-    </div>
 </header>
 
 <details class="adhd-about">
@@ -414,34 +473,42 @@ $showEmpty = !$folderExists;
     ?>
     <?php if ($phase === 3): ?>
     <aside class="banner">
-        <h2>Phase 3 — tagged notes</h2>
+        <h2>Phase 3 — locked in</h2>
         <p>
-            Items are auto-tagged by area. You can still green-check items as reviewed, add or remove tags, move items between Scattered / Reference / Articles, and rearrange.
-            Use the hamburger for original notes with per-line accounting.
+            Review is finished: no Suggest notes and no green-check marking in this phase.
+            Filter by tag, then <strong>Copy</strong> cards (or a whole panel) into your permanent notes app.
+            You can still tweak tags, move items, and rearrange. Use the hamburger for original notes with per-line accounting.
         </p>
         <ul>
-            <li>Edits here save into <code>phase2.json</code> so Cursor / Claude Code can see them.</li>
-            <li>Return to chat to refine tags or groupings (e.g. “Retag t1 under docker networking”).</li>
+            <li>Filter + Copy is the main exit path — paste into your own notes app.</li>
+            <li>Tag/move edits still save into <code>phase2.json</code>. Return to chat only to refine tags if needed.</li>
         </ul>
     </aside>
     <?php else: ?>
     <aside class="banner">
         <h2>Phase 2 — organized notes</h2>
         <p>
-            Review whether the AI parsed your notes correctly: that it did not drop lines unnecessarily, and that the suggestions for your lines make sense.
-            Green-check items in Scattered / Reference / Articles as you review them (saved into <code>phase2.json</code>).
-            Move items between those panels, or add tags on the right of any item (filter chips appear at the top).
+            Review whether the AI parsed your notes correctly: that it did not drop lines unnecessarily, and that each card reads the way you meant.
+            Want a note changed (different title, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on the Reference panel header for whole-panel feedback — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
+            Green-check items as you review them (saved into <code>phase2.json</code>).
+            Move items between panels, or add tags on the right (filter chips appear at the top).
             Phase 3 will ultimately tag items for you by area — optional tags here are fine in the meantime.
-            Use the hamburger for original notes with per-line accounting.
+            Review original scattered notes and which lines were dropped by opening
+            <span class="banner__menu-icon" aria-hidden="true" title="Menu icon">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 7h16M4 12h16M4 17h16"/>
+                </svg>
+            </span>
+            at the top right.
         </p>
         <ul>
-            <li>Edits here save into <code>phase2.json</code> so Cursor / Claude Code can see them.</li>
-            <li>Return to Cursor / Claude Code for merges, fidelity fixes, or to start Phase 3.</li>
+            <li>Use <strong>Suggest</strong> when a note should be rewritten or reorganized; return to chat so the AI can apply it.</li>
+            <li>Panel moves/tags save into <code>phase2.json</code>; Suggest notes save into <code>phase2-suggestions.md</code>.</li>
         </ul>
     </aside>
     <?php endif; ?>
 
-    <main class="main organized" data-phase2-root>
+    <main class="main organized" data-phase2-root data-phase="<?= (int) $phase ?>">
         <?php if ($phase2 === null): ?>
             <p class="muted">
                 <code>phase2.json</code> is missing. Return to Cursor / Claude Code and ask the skill to run Phase 2.
@@ -493,7 +560,20 @@ $showEmpty = !$folderExists;
                     (string) json_encode($filterLayout, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                 )
             ?></script>
+            <script type="application/json" id="phase2-suggestions-data"><?=
+                str_replace(
+                    '</',
+                    '<\/',
+                    (string) json_encode($phase2Suggestions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                )
+            ?></script>
             <?php
+            $reviewLocked = $phase === 3;
+            $itemSuggestions = is_array($phase2Suggestions['items'] ?? null)
+                ? $phase2Suggestions['items']
+                : [];
+            $panelReferenceSuggestion = (string) ($phase2Suggestions['panel']['reference'] ?? '');
+            $hasPanelReferenceSuggestion = !$reviewLocked && $panelReferenceSuggestion !== '';
             $sections = [
                 'tasks' => ['Scattered', 'No scattered items yet.', $tasks],
                 'reference' => ['Reference', 'No reference items yet.', $reference],
@@ -502,7 +582,7 @@ $showEmpty = !$folderExists;
             foreach ($sections as $bucketKey => $sectionMeta):
                 [$sectionTitle, $emptyLabel, $sectionItems] = $sectionMeta;
                 ?>
-                <section class="section-block" id="section-<?= e($bucketKey) ?>" data-section-bucket="<?= e($bucketKey) ?>">
+                <section class="section-block<?= ($bucketKey === 'reference' && $hasPanelReferenceSuggestion) ? ' has-panel-suggestion' : '' ?>" id="section-<?= e($bucketKey) ?>" data-section-bucket="<?= e($bucketKey) ?>">
                     <div class="section-block__header">
                         <button type="button"
                                 class="section-block__collapse"
@@ -528,6 +608,21 @@ $showEmpty = !$folderExists;
                                 </div>
                             </div>
                         <?php endif; ?>
+                        <?php if (!$reviewLocked && $bucketKey === 'reference'): ?>
+                            <div class="section-block__suggest" data-panel-suggest="reference">
+                                <button type="button"
+                                        class="section-block__suggest-toggle"
+                                        data-panel-suggest-toggle
+                                        aria-expanded="false"
+                                        title="Suggestion for Reference panel"
+                                        aria-label="Suggestion for Reference panel">
+                                    Suggest
+                                    <?php if ($hasPanelReferenceSuggestion): ?>
+                                        <span class="section-block__suggest-dot" aria-hidden="true"></span>
+                                    <?php endif; ?>
+                                </button>
+                            </div>
+                        <?php endif; ?>
                         <button type="button"
                                 class="section-block__rearrange"
                                 data-rearrange-toggle
@@ -549,9 +644,20 @@ $showEmpty = !$folderExists;
                             </svg>
                         </button>
                     </div>
+                    <?php if (!$reviewLocked && $bucketKey === 'reference'): ?>
+                        <div class="section-block__suggest-panel" data-panel-suggest-panel hidden>
+                            <label class="section-block__suggest-caption" for="suggest-panel-reference">Tell the AI how to change the Reference panel</label>
+                            <textarea class="section-block__suggest-input"
+                                      data-panel-suggest-input="reference"
+                                      id="suggest-panel-reference"
+                                      rows="3"
+                                      maxlength="4000"
+                                      placeholder="e.g. keep commands and facts here; move how-to steps to Scattered…"><?= e($panelReferenceSuggestion) ?></textarea>
+                        </div>
+                    <?php endif; ?>
                     <div class="section-block__body" id="section-body-<?= e($bucketKey) ?>" data-section-body>
                         <div class="section-block__body-inner">
-                            <?php render_item_cards($sectionItems, $bucketKey, $emptyLabel); ?>
+                            <?php render_item_cards($sectionItems, $bucketKey, $emptyLabel, $itemSuggestions, $reviewLocked); ?>
                         </div>
                     </div>
                 </section>
@@ -694,6 +800,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js?v=1.22"></script>
+<script src="assets/app.js?v=1.23"></script>
 </body>
 </html>

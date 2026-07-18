@@ -509,6 +509,9 @@
   // --- Phase 2: move buckets, tags, filter ---
   var phase2Root = qs("[data-phase2-root]");
   var organizedDataEl = qs("#phase2-organized-data");
+  var reviewLocked = phase2Root
+    ? String(phase2Root.getAttribute("data-phase") || "") === "3"
+    : false;
   var BUCKET_LABELS = {
     tasks: "Scattered",
     reference: "Reference",
@@ -517,8 +520,13 @@
   var BUCKET_KEYS = ["tasks", "reference", "articleCandidates"];
   var activeFilterTag = "";
   var saveTimer = null;
+  var suggestionsSaveTimer = null;
   var organizedState = null;
   var filterLayoutState = [];
+  var suggestionsState = {
+    panel: { reference: "" },
+    items: {},
+  };
   var filterDrag = {
     index: -1,
     didDrag: false,
@@ -578,6 +586,7 @@
   }
 
   function setItemChecked(id, checked) {
+    if (reviewLocked) return;
     var loc = findItemLocation(id);
     if (!loc) return;
     loc.item.checked = !!checked;
@@ -616,6 +625,113 @@
   function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(saveOrganized, 200);
+  }
+
+  function normalizeSuggestionsState(data) {
+    var next = {
+      panel: { reference: "" },
+      items: {},
+    };
+    if (!data || typeof data !== "object") return next;
+    if (data.panel && typeof data.panel === "object") {
+      next.panel.reference = String(data.panel.reference || "").trim();
+    }
+    if (data.items && typeof data.items === "object") {
+      Object.keys(data.items).forEach(function (id) {
+        var text = String(data.items[id] || "").trim();
+        if (!id || !text) return;
+        next.items[id] = text;
+      });
+    }
+    return next;
+  }
+
+  function saveSuggestions() {
+    if (reviewLocked) return;
+    fetch("index.php?action=save-suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(suggestionsState),
+    }).catch(function () {
+      // local save failure — UI state still updated
+    });
+  }
+
+  function scheduleSuggestionsSave() {
+    if (reviewLocked) return;
+    if (suggestionsSaveTimer) clearTimeout(suggestionsSaveTimer);
+    suggestionsSaveTimer = setTimeout(saveSuggestions, 300);
+  }
+
+  function syncItemSuggestionUi(card, text) {
+    if (!card) return;
+    var has = !!(text && String(text).trim());
+    card.classList.toggle("has-suggestion", has);
+    var toggle = qs("[data-suggest-toggle]", card);
+    var dot = qs(".item-card__suggest-dot", card);
+    if (has && !dot && toggle) {
+      dot = document.createElement("span");
+      dot.className = "item-card__suggest-dot";
+      dot.setAttribute("aria-hidden", "true");
+      toggle.appendChild(dot);
+    } else if (!has && dot) {
+      dot.remove();
+    }
+  }
+
+  function syncPanelSuggestionUi(section, text) {
+    if (!section) return;
+    var has = !!(text && String(text).trim());
+    section.classList.toggle("has-panel-suggestion", has);
+    var toggle = qs("[data-panel-suggest-toggle]", section);
+    var dot = qs(".section-block__suggest-dot", section);
+    if (has && !dot && toggle) {
+      dot = document.createElement("span");
+      dot.className = "section-block__suggest-dot";
+      dot.setAttribute("aria-hidden", "true");
+      toggle.appendChild(dot);
+    } else if (!has && dot) {
+      dot.remove();
+    }
+  }
+
+  function setItemSuggestion(id, text) {
+    if (!id) return;
+    var trimmed = String(text || "").trim();
+    if (trimmed) {
+      suggestionsState.items[id] = trimmed;
+    } else {
+      delete suggestionsState.items[id];
+    }
+    var card = qs('[data-org-id="' + id.replace(/"/g, "") + '"]', phase2Root);
+    syncItemSuggestionUi(card, trimmed);
+    scheduleSuggestionsSave();
+  }
+
+  function setPanelSuggestion(panel, text) {
+    if (panel !== "reference") return;
+    var trimmed = String(text || "").trim();
+    suggestionsState.panel.reference = trimmed;
+    var section = qs('[data-section-bucket="reference"]', phase2Root);
+    syncPanelSuggestionUi(section, trimmed);
+    scheduleSuggestionsSave();
+  }
+
+  function closeAllSuggestPanels(except) {
+    qsa("[data-suggest-panel]", phase2Root).forEach(function (panel) {
+      if (except && panel === except) return;
+      panel.hidden = true;
+      var wrap = panel.closest("[data-item-suggest]");
+      var toggle = wrap ? qs("[data-suggest-toggle]", wrap) : null;
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
+    qsa("[data-panel-suggest-panel]", phase2Root).forEach(function (panel) {
+      if (except && panel === except) return;
+      panel.hidden = true;
+      var section = panel.closest("[data-section-bucket]");
+      var toggle = section ? qs("[data-panel-suggest-toggle]", section) : null;
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
   }
 
   function collectAllTags() {
@@ -869,13 +985,19 @@
       menu.setAttribute("role", "menu");
       menu.hidden = true;
 
-      function addMenuOption(side, text) {
+      function addDividerArrowOption(side, label, svgPath) {
         var option = document.createElement("button");
         option.type = "button";
-        option.className = "tag-filter__menu-option";
+        option.className = "tag-filter__menu-option tag-filter__menu-option--arrow";
         option.setAttribute("data-filter-divider-side", side);
         option.setAttribute("role", "menuitem");
-        option.textContent = text;
+        option.setAttribute("aria-label", label);
+        option.innerHTML =
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="' +
+          svgPath +
+          '"/></svg><span>' +
+          label +
+          "</span>";
         option.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
@@ -885,8 +1007,30 @@
         menu.appendChild(option);
       }
 
-      addMenuOption("left", "Divider to left");
-      addMenuOption("right", "Divider to right");
+      addDividerArrowOption("left", "Add divider left", "M19 12H5M11 6l-6 6 6 6");
+      addDividerArrowOption("right", "Add divider right", "M5 12h14M13 6l6 6-6 6");
+
+      var separator = document.createElement("div");
+      separator.className = "tag-filter__menu-separator";
+      separator.setAttribute("role", "separator");
+      menu.appendChild(separator);
+
+      var deleteOption = document.createElement("button");
+      deleteOption.type = "button";
+      deleteOption.className = "tag-filter__menu-option tag-filter__menu-option--danger";
+      deleteOption.setAttribute("role", "menuitem");
+      deleteOption.textContent = "Delete tag";
+      deleteOption.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeAllFilterMenus();
+        var tagLabel = item.name;
+        if (!window.confirm('Delete tag "' + tagLabel + '" from all cards?')) {
+          return;
+        }
+        deleteTagFromAllCards(tagLabel);
+      });
+      menu.appendChild(deleteOption);
 
       menuToggle.addEventListener("click", function (e) {
         e.preventDefault();
@@ -1089,6 +1233,41 @@
     setItemTags(id, next);
   }
 
+  function deleteTagFromAllCards(tagName) {
+    var name = String(tagName || "").trim();
+    if (!name || !organizedState) return;
+    var key = name.toLowerCase();
+    var changed = false;
+
+    BUCKET_KEYS.forEach(function (bucket) {
+      (organizedState[bucket] || []).forEach(function (item, index) {
+        var tags = normalizeTagList(item.tags);
+        var next = tags.filter(function (t) {
+          return t.toLowerCase() !== key;
+        });
+        if (next.length === tags.length) return;
+        item.tags = next;
+        organizedState[bucket][index] = item;
+        changed = true;
+
+        var card = qs('[data-org-id="' + String(item.id).replace(/"/g, "") + '"]', phase2Root);
+        if (card) {
+          card.setAttribute("data-tags", JSON.stringify(next));
+          renderTagChips(card, next);
+        }
+      });
+    });
+
+    if (!changed) return;
+
+    if (activeFilterTag && activeFilterTag.toLowerCase() === key) {
+      activeFilterTag = "";
+    }
+    rebuildFilterBar();
+    applyFilter();
+    scheduleSave();
+  }
+
   var dragState = {
     section: null,
     card: null,
@@ -1212,6 +1391,15 @@
       filterLayoutState = [];
     }
 
+    var suggestionsDataEl = qs("#phase2-suggestions-data");
+    try {
+      suggestionsState = normalizeSuggestionsState(
+        suggestionsDataEl ? JSON.parse(suggestionsDataEl.textContent || "{}") : null
+      );
+    } catch (err) {
+      suggestionsState = normalizeSuggestionsState(null);
+    }
+
     BUCKET_KEYS.forEach(function (bucket) {
       organizedState[bucket] = (organizedState[bucket] || []).map(function (item) {
         return adaptItemForBucket(item, bucket);
@@ -1223,6 +1411,48 @@
     applyFilter();
 
     phase2Root.addEventListener("click", function (e) {
+      var itemSuggestToggle = e.target.closest("[data-suggest-toggle]");
+      if (itemSuggestToggle) {
+        if (reviewLocked) return;
+        if (itemSuggestToggle.closest(".is-rearranging")) return;
+        var itemSuggestWrap = itemSuggestToggle.closest("[data-item-suggest]");
+        var itemSuggestPanel = itemSuggestWrap
+          ? qs("[data-suggest-panel]", itemSuggestWrap)
+          : null;
+        if (!itemSuggestPanel) return;
+        var itemWillOpen = itemSuggestPanel.hidden;
+        closeAllSuggestPanels(itemWillOpen ? itemSuggestPanel : null);
+        itemSuggestPanel.hidden = !itemWillOpen;
+        itemSuggestToggle.setAttribute("aria-expanded", itemWillOpen ? "true" : "false");
+        if (itemWillOpen) {
+          var itemInput = qs("[data-suggest-input]", itemSuggestPanel);
+          if (itemInput) itemInput.focus();
+        }
+        return;
+      }
+
+      var panelSuggestToggle = e.target.closest("[data-panel-suggest-toggle]");
+      if (panelSuggestToggle) {
+        if (reviewLocked) return;
+        var panelSection = panelSuggestToggle.closest("[data-section-bucket]");
+        var panelSuggestPanel = panelSection
+          ? qs("[data-panel-suggest-panel]", panelSection)
+          : null;
+        if (!panelSuggestPanel) return;
+        var panelWillOpen = panelSuggestPanel.hidden;
+        closeAllSuggestPanels(panelWillOpen ? panelSuggestPanel : null);
+        panelSuggestPanel.hidden = !panelWillOpen;
+        panelSuggestToggle.setAttribute("aria-expanded", panelWillOpen ? "true" : "false");
+        if (panelWillOpen) {
+          if (panelSection.classList.contains("is-collapsed")) {
+            setCollapsed(panelSection, false);
+          }
+          var panelInput = qs("[data-panel-suggest-input]", panelSuggestPanel);
+          if (panelInput) panelInput.focus();
+        }
+        return;
+      }
+
       var infoToggle = e.target.closest("[data-section-info-toggle]");
       if (infoToggle) {
         var infoWrap = infoToggle.closest("[data-section-info]");
@@ -1327,6 +1557,7 @@
       var checkBtn = e.target.closest("[data-check-item]");
       var titleEl = e.target.closest(".item-card__title-row > h3");
       if (checkBtn || titleEl) {
+        if (reviewLocked) return;
         if ((checkBtn || titleEl).closest(".is-rearranging")) return;
         var checkCard = (checkBtn || titleEl).closest(".item-card[data-org-id]");
         if (!checkCard) return;
@@ -1499,6 +1730,13 @@
       if (!e.target.closest("[data-filter-menu-wrap]")) {
         closeAllFilterMenus();
       }
+      if (
+        !e.target.closest("[data-item-suggest]") &&
+        !e.target.closest("[data-panel-suggest]") &&
+        !e.target.closest("[data-panel-suggest-panel]")
+      ) {
+        closeAllSuggestPanels();
+      }
     });
 
     document.addEventListener("keydown", function (e) {
@@ -1506,9 +1744,24 @@
         closeAllMoveMenus();
         closeAllFilterMenus();
         closeSectionInfoTips();
+        closeAllSuggestPanels();
         qsa("[data-section-bucket].is-rearranging", phase2Root).forEach(function (section) {
           finishRearrange(section, null);
         });
+      }
+    });
+
+    phase2Root.addEventListener("input", function (e) {
+      var itemInput = e.target.closest("[data-suggest-input]");
+      if (itemInput) {
+        var itemCard = itemInput.closest(".item-card[data-org-id]");
+        if (!itemCard) return;
+        setItemSuggestion(itemCard.getAttribute("data-org-id"), itemInput.value);
+        return;
+      }
+      var panelInput = e.target.closest("[data-panel-suggest-input]");
+      if (panelInput) {
+        setPanelSuggestion(panelInput.getAttribute("data-panel-suggest-input"), panelInput.value);
       }
     });
 

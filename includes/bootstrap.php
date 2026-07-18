@@ -59,7 +59,10 @@ function list_note_files(string $dir): array
         return [];
     }
 
-    $skip = ['shorthands.md' => true];
+    $skip = [
+        'shorthands.md' => true,
+        'phase2-suggestions.md' => true,
+    ];
     $files = [];
 
     foreach (scandir($dir) ?: [] as $name) {
@@ -399,4 +402,171 @@ function save_json_file(string $path, array $data): bool
         return false;
     }
     return file_put_contents($path, $json . "\n") !== false;
+}
+
+function phase2_suggestions_path(string $dir): string
+{
+    return $dir . '/phase2-suggestions.md';
+}
+
+/**
+ * @param mixed $data
+ * @return array{panel: array{reference: string}, items: array<string, string>}
+ */
+function normalize_phase2_suggestions($data): array
+{
+    $out = [
+        'panel' => ['reference' => ''],
+        'items' => [],
+    ];
+    if (!is_array($data)) {
+        return $out;
+    }
+
+    $panel = $data['panel'] ?? null;
+    if (is_array($panel)) {
+        $out['panel']['reference'] = trim((string) ($panel['reference'] ?? ''));
+    }
+
+    $items = $data['items'] ?? null;
+    if (is_array($items)) {
+        foreach ($items as $id => $text) {
+            $itemId = trim((string) $id);
+            if ($itemId === '') {
+                continue;
+            }
+            $body = trim((string) $text);
+            if ($body === '') {
+                continue;
+            }
+            $out['items'][$itemId] = $body;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * @return array{panel: array{reference: string}, items: array<string, string>}
+ */
+function parse_phase2_suggestions_md(string $raw): array
+{
+    $out = [
+        'panel' => ['reference' => ''],
+        'items' => [],
+    ];
+
+    $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+    $lines = explode("\n", $raw);
+    $section = null; // 'panel:reference' | 'item:{id}'
+    $buf = [];
+
+    $flush = static function () use (&$section, &$buf, &$out): void {
+        if ($section === null) {
+            $buf = [];
+            return;
+        }
+        $text = trim(implode("\n", $buf));
+        $buf = [];
+        if ($text === '') {
+            return;
+        }
+        if ($section === 'panel:reference') {
+            $out['panel']['reference'] = $text;
+            return;
+        }
+        if (strpos($section, 'item:') === 0) {
+            $id = substr($section, 5);
+            if ($id !== '') {
+                $out['items'][$id] = $text;
+            }
+        }
+    };
+
+    foreach ($lines as $line) {
+        if (preg_match('/^##\s+Panel:\s*reference\s*$/i', $line)) {
+            $flush();
+            $section = 'panel:reference';
+            continue;
+        }
+        if (preg_match('/^##\s+Item:\s*(\S+)\s*$/i', $line, $m)) {
+            $flush();
+            $section = 'item:' . trim($m[1]);
+            continue;
+        }
+        if (preg_match('/^#\s+/', $line) && $section === null) {
+            continue;
+        }
+        if ($section !== null) {
+            $buf[] = $line;
+        }
+    }
+    $flush();
+
+    return normalize_phase2_suggestions($out);
+}
+
+/**
+ * @param array{panel: array{reference: string}, items: array<string, string>} $data
+ */
+function format_phase2_suggestions_md(array $data): string
+{
+    $data = normalize_phase2_suggestions($data);
+    $parts = ["# Phase 2 suggestions", ''];
+
+    $panelRef = $data['panel']['reference'];
+    if ($panelRef !== '') {
+        $parts[] = '## Panel: reference';
+        $parts[] = '';
+        $parts[] = $panelRef;
+        $parts[] = '';
+    }
+
+    foreach ($data['items'] as $id => $text) {
+        $parts[] = '## Item: ' . $id;
+        $parts[] = '';
+        $parts[] = $text;
+        $parts[] = '';
+    }
+
+    $md = rtrim(implode("\n", $parts));
+    return $md === '# Phase 2 suggestions' ? "# Phase 2 suggestions\n" : $md . "\n";
+}
+
+/**
+ * @return array{panel: array{reference: string}, items: array<string, string>}
+ */
+function load_phase2_suggestions(string $dir): array
+{
+    $path = phase2_suggestions_path($dir);
+    if (!is_file($path)) {
+        return normalize_phase2_suggestions(null);
+    }
+    $raw = file_get_contents($path);
+    if ($raw === false) {
+        return normalize_phase2_suggestions(null);
+    }
+    return parse_phase2_suggestions_md($raw);
+}
+
+/**
+ * @param array<string, mixed> $data
+ */
+function save_phase2_suggestions(string $dir, array $data): bool
+{
+    $normalized = normalize_phase2_suggestions($data);
+    $md = format_phase2_suggestions_md($normalized);
+    $path = phase2_suggestions_path($dir);
+
+    if (
+        $normalized['panel']['reference'] === ''
+        && $normalized['items'] === []
+    ) {
+        if (is_file($path)) {
+            return unlink($path);
+        }
+        return true;
+    }
+
+    return file_put_contents($path, $md) !== false;
 }

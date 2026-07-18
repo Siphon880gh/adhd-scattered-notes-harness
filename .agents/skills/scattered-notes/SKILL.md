@@ -20,9 +20,11 @@ This is primarily used under Cursor or Claude Code but we open the php file as a
 
 - User has scattered notes in `inputs/{folder}/` (`.md` / `.txt`)
 - User asks to process, organize, clarify, or continue a scattered-notes batch
+- User says **“start phase 1”**, **“start phase 2”**, **“start phase 3”**, or **“let’s continue”** (any phase — treat as resume/advance for the active batch)
 - User explains shorthand / symbols after reviewing Phase 1 in the app
 - User confirms Phase 1 is done and wants Phase 2
 - User confirms Phase 2 is done and wants Phase 3 (auto-tagging)
+- User says **“Revert to Phase 2”** while in Phase 3 (unlock Suggest / green-check again)
 
 ## File contracts
 
@@ -33,6 +35,7 @@ Per batch folder `inputs/{folder}/`:
 | `*.md`, `*.txt` | Raw scattered notes |
 | `phase1.json` | Uncertain marks + YouTube enrichments |
 | `phase2.json` | Organized notes + per-line blame map + item tags (+ optional `filterLayout`) |
+| `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole Reference panel; **read before writing/revising Phase 2** |
 
 Project root:
 
@@ -41,7 +44,7 @@ Project root:
 | `app.config.json` | `{ "inputFolder": "{folder}" \| "", "phase": 1 \| 2 \| 3 }` — skill owns this; empty `inputFolder` means no project selected |
 | `shorthands.md` | App-wide glossary — **always read before marking uncertainty**; shared by every batch |
 
-Skip when reading notes: `phase1.json`, `phase2.json`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
+Skip when reading notes: `phase1.json`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
 
 A scattered note may be a line, a group of lines, or a whole file. Within a file, `---` separates notes. The batch is one broad category (coding, linux, etc.).
 
@@ -104,7 +107,35 @@ Every source line must have a `blame` entry. Use fates such as: `mapped`, `merge
 
 Phase 2 items that come from a YouTube line **must reuse** `youtube.title` and `youtube.about` from `phase1.json` (e.g. reference title = that title; body includes the URL plus `about`). Do **not** invent a new title or write a metadata placeholder in Phase 2.
 
-**Browser edits:** In Phase 2 and Phase 3, the app POSTs to `index.php?action=save-phase2` and writes moves, tags, reorder, green-check (`checked`), and `filterLayout` into this same `phase2.json`. Always **re-read** `phase2.json` before Phase 3 or any fidelity fix so user edits are not overwritten blindly. Preserve each item’s `checked` boolean when rewriting organized items.
+**Browser edits:** In Phase 2, the app POSTs to `index.php?action=save-phase2` and writes moves, tags, reorder, green-check (`checked`), and `filterLayout` into this same `phase2.json`. Phase 3 still saves moves/tags/reorder/`filterLayout`, but **Suggest** and green-check are locked off (review is finished). Always **re-read** `phase2.json` before Phase 3 or any fidelity fix so user edits are not overwritten blindly. Preserve each item’s `checked` boolean when rewriting organized items.
+
+### `phase2-suggestions.md`
+
+User-written feedback saved by the app **during Phase 2 only** (batch folder). May be missing — treat as empty. **Always read this file (if present) before the first Phase 2 write, before any Phase 2 revision, and before advancing to Phase 3.** Apply the feedback when grouping, moving buckets, merging, or fixing fidelity — that rewrite happens as a **Phase 2 pass**, not as Phase 3 tagging. For each item suggestion, you may rewrite the **heading (`title`) and/or the `body`** (either field alone, or both) to match what the user asked for; do not leave a stale title when they asked for a clearer heading, and do not leave a stale body when they asked for clearer wording. Do not invent suggestions; only use what the user wrote. Phase 3 does not open Suggest UI; do not expect new suggestion notes after lock-in.
+
+Format (app-owned; preserve structure when the user edits via the app):
+
+```markdown
+# Phase 2 suggestions
+
+## Panel: reference
+
+Optional notes about the whole Reference panel (grouping, tone, what belongs here).
+
+## Item: t1
+
+Optional notes about organized item id `t1` (wrong bucket, merge, rewrite heading, rewrite body, keep detail, etc.).
+
+## Item: r2
+
+…
+```
+
+- `## Panel: reference` — guidance for the entire Reference panel.
+- `## Item: {id}` — guidance for one organized item (`t1`, `r1`, `a1`, …). Match by `id` from `phase2.json`.
+- When applying an item suggestion: rewrite `title` (heading), `body`, or **both**, as needed. Leave a field unchanged only when the suggestion does not call for changing it.
+- Omit empty sections. Ignore unknown item ids (item may have been removed).
+- The app POSTs to `index.php?action=save-suggestions` to write this file. Do not wipe it when rewriting `phase2.json`.
 
 ### `shorthands.md` (project root)
 
@@ -149,7 +180,7 @@ Announce the detected state briefly (e.g. “Active: `inputs/sample` · phase 2 
 
 1. **Continue `{folder}` …** — keep `app.config.json` as-is; do not wipe artifacts. Word the option by phase:
    - **Phase 1:** Continue `{folder}` at phase 1 — resume reviewing uncertain marks / shorthand in the app.
-   - **Phase 2:** Continue `{folder}` at phase 2 — open the app and review whether the AI parsed your notes correctly: nothing important dropped, and the suggestions for your lines make sense.
+   - **Phase 2:** Continue `{folder}` at phase 2 — open the app and review whether the AI parsed your notes correctly: nothing important dropped, cards read as intended; use **Suggest** on any note that should change.
 2. **Reset sample and select it** — same as A.1 (starts a fresh sample session at phase 1).
 3. **See the app with no folder selected** — same as A.2 (empty-state preview only; you still must pick a folder or select sample afterward).
 4. **Switch to folder `{name}`** — one option per other non-sample directory under `inputs/` (sets that folder, `"phase": 1`, then Phase 1).
@@ -157,11 +188,12 @@ Announce the detected state briefly (e.g. “Active: `inputs/sample` · phase 2 
 
 **C. Final session (phase 3)** — offer:
 
-1. **Continue refining `{folder}` (phase 3)** — keep config; re-read `phase2.json` and refine tags / fidelity as the user asks.
-2. **Start a new batch** — then offer A’s folder picks (reset sample + select, other folders, or create new notes). Do not wipe the finished folder unless they explicitly ask.
-3. **Reset sample and select it** — same as A.1.
-4. **See the app with no folder selected** — same as A.2 (empty-state preview only; you still must pick a folder or select sample afterward).
-5. **None / use my notes** — same as A.4.
+1. **Continue `{folder}` (phase 3, locked)** — keep config; remind them the app is for **filter + copy** into their permanent notes app. Re-read `phase2.json` and refine tags only if they ask. No Suggest / green-check loop. Also remind: they can always say **“Revert to Phase 2”** in chat, then refresh the app, to unlock Suggest / green-check again.
+2. **Revert to Phase 2** — set `app.config.json` `"phase": 2` (keep `inputFolder` and `phase2.json`); tell them to refresh the app so Suggest / green-check return.
+3. **Start a new batch** — then offer A’s folder picks (reset sample + select, other folders, or create new notes). Do not wipe the finished folder unless they explicitly ask.
+4. **Reset sample and select it** — same as A.1.
+5. **See the app with no folder selected** — same as A.2 (empty-state preview only; you still must pick a folder or select sample afterward).
+6. **None / use my notes** — same as A.4.
 
 Selecting sample is never “open whatever is already there” — **Reset sample and select it** and **See the app with no folder selected** always run the reset below.
 
@@ -181,8 +213,13 @@ Selecting sample is never “open whatever is already there” — **Reset sampl
   1. Do **not** change `inputFolder` / `phase` unless the user asks to advance or switch.
   2. Resume at the current phase:
      - Phase 1: marks / shorthand loop.
-     - Phase 2: tell them to review in the app whether the AI parsed their notes correctly — that it did not drop lines unnecessarily, and that the suggestions for their lines make sense — then return to chat to refine or advance.
-     - Phase 3: tag refine.
+     - Phase 2: tell them to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; use **Suggest** on any note that should change — then return to chat to apply those notes or advance.
+     - Phase 3: locked — filter/copy exit; tag refine only if asked. Remind they can say **“Revert to Phase 2”** anytime, then refresh the app.
+
+- **If they choose “Revert to Phase 2”** (from phase 3, or they say that phrase in chat):
+  1. Keep `inputFolder` and do **not** wipe `phase1.json` / `phase2.json` / `phase2-suggestions.md`.
+  2. Write `app.config.json` with `"phase": 2`.
+  3. Tell them to **refresh the app** — Suggest / green-check unlock again; resume Phase 2 review (apply suggestions, fidelity, then they can re-advance to Phase 3 when ready).
 
 - **If they choose another / switch folder under `inputs/`:**
   1. Write `app.config.json` with that folder and `"phase": 1`.
@@ -265,25 +302,29 @@ Phase 1 may loop: user explains → update root `shorthands.md` → rewrite `pha
 Only after the user confirms Phase 1 is done:
 
 1. Set `app.config.json` `"phase": 2`.
-2. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
-3. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
-4. Account for every line in `blame` — fidelity first; do not silently drop details.
-5. Write `phase2.json` (items may omit `tags` for now, or use `[]`).
-6. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that the suggestions for their lines make sense. Remind them they can:
+2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: reference` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`** as needed.
+3. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
+4. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
+5. Account for every line in `blame` — fidelity first; do not silently drop details.
+6. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md`.
+7. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or the Reference panel header for whole-panel feedback) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
+   - **green-check** items as they review;
    - **add tags** or **move items** between Scattered / Reference / Articles (and rearrange within a panel);
-   - those edits **save into `phase2.json`** via the PHP endpoint so this chat can see them later;
+   - those panel edits **save into `phase2.json`** via the PHP endpoint so this chat can see them later;
    - **Phase 3 will ultimately tag the items for you** by area — manual tags in the app are optional;
-   - then **return to this chat** to refine groupings/fidelity, or say Phase 2 looks good and start Phase 3.
+   - then **return to this chat** so you can apply Suggest notes (re-read `phase2-suggestions.md` + `phase2.json`), or say Phase 2 looks good and start Phase 3.
 
-### 3. Phase 3 — auto-tag by area
+### 3. Phase 3 — auto-tag by area (then lock)
 
 Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 
-1. **Re-read** `inputs/{folder}/phase2.json` so any browser moves/tags/reorder are included.
-2. Set `app.config.json` `"phase": 3`.
-3. Tag every organized item (`tasks`, `reference`, `articleCandidates`) so related notes share tags.
-4. Write the updated `tags` (and keep `blame` / bucket placement / user edits) back to `phase2.json`.
-5. Tell the user to refresh `index.php`, review tags/filters, edit further if they want (still saves to `phase2.json`), then **return to this chat** to refine tags.
+1. **Re-read** `inputs/{folder}/phase2-suggestions.md` (if present) **and** `phase2.json`. If suggestion notes are still pending, **apply them first** as a Phase 2 content rewrite (grouping / heading (`title`) and/or `body` / buckets / fidelity), then continue. Phase 3 itself does not keep a Suggest loop.
+2. **Re-read** `phase2.json` again so any browser moves/tags/reorder are included.
+3. Set `app.config.json` `"phase": 3`.
+4. Tag every organized item (`tasks`, `reference`, `articleCandidates`) so related notes share tags.
+5. **Always write `filterLayout`** in `phase2.json` (required, not optional): order all tags into related groups and insert `{ "type": "divider" }` **between major areas** so the Filter bar is scannable. Include every tag used on any item. Do not leave a flat ungrouped tag list. If the user already ordered tags/dividers in the app, keep their order where it still makes sense and only insert missing tags (with dividers for new major areas).
+6. Write the updated `tags` + `filterLayout` (and keep `blame` / bucket placement / user edits / `checked`) back to `phase2.json`. Do **not** wipe `phase2-suggestions.md`.
+7. Tell the user to refresh `index.php`: Phase 3 is **locked in** — no Suggest buttons, no green-check marking. The app’s job now is to **filter by tag and Copy** cards (or whole panels) into their permanent notes app. Tag/move tweaks still save to `phase2.json`; return to chat only to refine tags if needed. **Always mention** they can return to Phase 2 anytime by saying **“Revert to Phase 2”** in this chat, then refreshing the app (Suggest / green-check unlock; organized notes stay).
 
 #### Tagging rules
 
@@ -293,31 +334,46 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 - Prefer reuse of the same tag string across items in the same area (consistent casing).
 - **Preserve** any tags the user already added in the app; merge AI tags with theirs (dedupe case-insensitively).
 - Do not invent tags that contradict the item’s content; when unsure, use a broader category tag.
-- Optionally refresh `filterLayout` so new tags appear in a sensible order (group related tags; dividers between major areas are fine). If unsure, omit `filterLayout` and let the app append missing tags.
+
+#### `filterLayout` rules (Phase 3 — always)
+
+- **Always** emit `filterLayout` when writing Phase 3 `phase2.json`.
+- Group related tags together (same area / hierarchy), then put a divider between groups.
+- Example shape: `nginx`, `certs`, `firewall` → divider → `docker`, `compose` → divider → `node`, `tooling`.
+- No leading/trailing divider required; never stack two dividers in a row; every tag name in `filterLayout` must exist on at least one item (and every item tag must appear once in the layout).
+- When refining tags later in a phase-3 session, refresh `filterLayout` the same way.
 
 ## Agent checklist
 
 1. On every start: read `app.config.json`, list `inputs/` folders, detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3), announce state, then offer the matching option set from §0.
-2. Mid-session: offer **Continue** first (phase 2 wording: review parse fidelity — nothing dropped, suggestions make sense); Final: offer **Continue refining** first. Do not wipe an in-progress or finished batch unless they choose a reset/switch.
+2. Mid-session: offer **Continue** first (phase 2 wording: review parse fidelity — nothing dropped; invite **Suggest** for notes that should change); Final: offer **Continue (phase 3, locked)** first — filter/copy exit — and remind **“Revert to Phase 2”** then refresh unlocks Suggest again. Do not wipe an in-progress or finished batch unless they choose a reset/switch.
 3. If reset sample + select: delete `inputs/sample/`, recreate note files only (no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
 4. If “See the app with no folder selected”: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`; empty-state preview only — they still must pick a folder or select sample afterward; re-offer folders.
 5. If another / switch folder: update `app.config.json` to that folder phase 1.
 6. Read root `shorthands.md` before any uncertainty marks.
-7. Never treat root `shorthands.md` / `phase1.json` / `phase2.json` as source notes.
+7. Never treat root `shorthands.md` / `phase1.json` / `phase2.json` / `phase2-suggestions.md` as source notes.
 8. Phase 1 artifacts must be visible in the app after refresh.
 9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure only: `YouTube (lookup failed)`.
-10. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`.
-11. Phase 2: every line in every note file appears in `blame`.
-12. Do not advance to Phase 2 without explicit user confirmation.
-13. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily, suggestions make sense; they may tag/move (writes `phase2.json`); Phase 3 will auto-tag.
-14. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` from disk.
-15. Do not advance to Phase 3 without explicit user confirmation.
-16. Phase 3: tag all organized items; preserve user tags; write back to `phase2.json`; set phase 3.
-17. After each write, remind the user how to return to Cursor / Claude Code to continue.
+10. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file.
+11. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`.
+12. Phase 2: every line in every note file appears in `blame`.
+13. Do not advance to Phase 2 without explicit user confirmation.
+14. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body`); they may also tag/move (writes `phase2.json`); Phase 3 will auto-tag.
+15. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite before tagging.
+16. Do not advance to Phase 3 without explicit user confirmation.
+17. Phase 3: tag all organized items; preserve user tags; **always write `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
+18. On **“Revert to Phase 2”**: set `"phase": 2` (keep folder + artifacts); tell them to refresh the app; resume Phase 2.
+19. After each write, remind the user how to return to Cursor / Claude Code to continue (Phase 3: optional tag refine, or **“Revert to Phase 2”**).
 
 ## Return-to-chat prompts (for the user)
 
-After Phase 1 writes, tell the user they can say things like:
+Across **all phases**, the user can drive the harness with short phrases:
+
+- **“start phase 1”** / **“start phase 2”** / **“start phase 3”** — begin or jump to that phase for the active folder (respect advance gates: don’t run Phase 2/3 until the prior phase is confirmed done, unless they explicitly insist).
+- **“let’s continue”** (or “continue”) — resume the current mid/final session at whatever phase `app.config.json` already has; same as choosing **Continue** in §0.
+- **“Revert to Phase 2”** — from Phase 3 only: set `"phase": 2`, keep artifacts; user refreshes the app to unlock Suggest / green-check.
+
+After Phase 1 writes, also tell them they can say things like:
 
 - “`wtf` means write the function”
 - “Phase 1 looks good — start Phase 2”
@@ -325,6 +381,7 @@ After Phase 1 writes, tell the user they can say things like:
 After Phase 2 writes:
 
 - “Merge t1 and t3”
+- “Rewrite the heading on t2 to …” / “Rewrite the body on r1 to …”
 - “Line 12 in braindump.md should stay as reference, not a task”
 - “Phase 2 looks good — start Phase 3”
 
@@ -332,3 +389,6 @@ After Phase 3 writes:
 
 - “Retag t8 under docker networking”
 - “Add a supercategory tag devops to t4 and t6”
+- **“Revert to Phase 2”** — then refresh the app (Suggest / green-check unlock again)
+
+Also remind them Phase 3 is locked for review: filter tags and Copy into their permanent notes app — and that they can always **Revert to Phase 2** in chat, then refresh.
