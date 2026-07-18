@@ -3,85 +3,107 @@
         "tasks": [
             {
                 "id": "t1",
-                "title": "Compare nginx -t with reload / restart",
+                "title": "Task: Compare nginx -t with reload / restart",
                 "body": "Compare `nginx -t` (config test / validate) with the other commands:\n- `nginx -s reload` — reload config without dropping connections\n- restart (e.g. `systemctl restart nginx`) — full process restart\n\nWhat does `-t` actually validate vs what reload/restart do?\n\n(Shorthand: wtf = go find out)",
                 "sources": [
                     "braindump.md:3"
                 ],
-                "tags": ["nginx"],
+                "tags": [
+                    "nginx"
+                ],
                 "checked": false
             },
             {
                 "id": "t2",
-                "title": "SSH keys: authorized_keys + permissions",
+                "title": "Task: SSH keys: authorized_keys + permissions",
                 "body": "Copy pub to authorized_keys but ALSO check permissions 700/600 or it silently fails.",
                 "sources": [
                     "braindump.md:5"
                 ],
-                "tags": ["ssh", "permissions"],
+                "tags": [
+                    "ssh",
+                    "permissions"
+                ],
                 "checked": true
             },
             {
                 "id": "t3",
-                "title": "UFW: open web ports without locking out SSH",
+                "title": "Task: UFW: open web ports without locking out SSH",
                 "body": "ufw: allow 80/443 then enable; don't lock yourself out of 22.",
                 "sources": [
                     "braindump.md:11"
                 ],
-                "tags": ["firewall", "ufw"],
+                "tags": [
+                    "firewall",
+                    "ufw"
+                ],
                 "checked": false
             },
             {
                 "id": "t4",
-                "title": "Certbot issue + check renewal timers",
+                "title": "Task: Certbot issue + check renewal timers",
                 "body": "certbot certonly --nginx -d example.com\n\nRenewal is a cron/timer thing — check with:\nsystemctl list-timers | grep cert",
                 "sources": [
                     "braindump.md:13",
                     "braindump.md:14"
                 ],
-                "tags": ["nginx", "certs"],
+                "tags": [
+                    "nginx",
+                    "certs"
+                ],
                 "checked": false
             },
             {
                 "id": "t5",
-                "title": "rsync deploy dist → host (dry-run first)",
+                "title": "Task: rsync deploy dist → host (dry-run first)",
                 "body": "rsync -avz --delete ./dist/ user@host:/var/www/app/\n\nDRY RUN FIRST with -n",
                 "sources": [
                     "half-thoughts.md:1",
                     "half-thoughts.md:2"
                 ],
-                "tags": ["deploy", "rsync"],
+                "tags": [
+                    "deploy",
+                    "rsync"
+                ],
                 "checked": false
             },
             {
                 "id": "t6",
-                "title": "Pick Node (and version manager) for photos→video app",
+                "title": "Task: Pick Node (and version manager) for photos→video app",
                 "body": "asdf vs nvm vs mise — pick one for node on laptop, stop installing globally with brew every time.\n\nChoose a Node version appropriate for the photos-to-video app (not whatever brew last installed).",
                 "sources": [
                     "random.txt:10"
                 ],
-                "tags": ["node", "version managers"],
+                "tags": [
+                    "node",
+                    "version managers"
+                ],
                 "checked": false
             },
             {
                 "id": "t7",
-                "title": "Docker: EXPOSE vs publishing with -p",
+                "title": "Task: Docker: EXPOSE vs publishing with -p",
                 "body": "What's the difference between EXPOSE and publishing -p again?\n\n(Shorthand: WTF = go find out)",
                 "sources": [
                     "random.txt:14"
                 ],
-                "tags": ["docker", "networking"],
+                "tags": [
+                    "docker",
+                    "networking"
+                ],
                 "checked": false
             },
             {
                 "id": "t8",
-                "title": "Clean dead Docker containers (careful with volumes)",
+                "title": "Task: Clean dead Docker containers (careful with volumes)",
                 "body": "docker ps -a | grep dead\n\nprune? careful volumes",
                 "sources": [
                     "random.txt:1",
                     "random.txt:2"
                 ],
-                "tags": ["docker"],
+                "tags": [
+                    "docker"
+                ],
                 "checked": false
             }
         ],
@@ -93,7 +115,10 @@
                 "sources": [
                     "braindump.md:7"
                 ],
-                "tags": ["nginx", "journalctl"],
+                "tags": [
+                    "nginx",
+                    "journalctl"
+                ],
                 "checked": false
             },
             {
@@ -103,7 +128,9 @@
                 "sources": [
                     "braindump.md:9"
                 ],
-                "tags": ["youtube"],
+                "tags": [
+                    "youtube"
+                ],
                 "checked": false
             },
             {
@@ -113,7 +140,9 @@
                 "sources": [
                     "half-thoughts.md:4"
                 ],
-                "tags": ["tmux"],
+                "tags": [
+                    "tmux"
+                ],
                 "checked": false
             },
             {
@@ -123,7 +152,9 @@
                 "sources": [
                     "half-thoughts.md:6"
                 ],
-                "tags": ["tooling"],
+                "tags": [
+                    "tooling"
+                ],
                 "checked": false
             },
             {
@@ -133,7 +164,9 @@
                 "sources": [
                     "half-thoughts.md:10"
                 ],
-                "tags": ["postgres"],
+                "tags": [
+                    "postgres"
+                ],
                 "checked": false
             },
             {
@@ -143,7 +176,10 @@
                 "sources": [
                     "random.txt:6"
                 ],
-                "tags": ["docker", "compose"],
+                "tags": [
+                    "docker",
+                    "compose"
+                ],
                 "checked": false
             }
         ],
@@ -155,7 +191,11 @@
                 "sources": [
                     "half-thoughts.md:8"
                 ],
-                "tags": ["ssh", "permissions", "nginx"],
+                "tags": [
+                    "ssh",
+                    "permissions",
+                    "nginx"
+                ],
                 "checked": false
             }
         ]
@@ -471,30 +511,98 @@
         ]
     },
     "filterLayout": [
-        { "type": "tag", "name": "nginx" },
-        { "type": "tag", "name": "certs" },
-        { "type": "tag", "name": "journalctl" },
-        { "type": "divider" },
-        { "type": "tag", "name": "ssh" },
-        { "type": "tag", "name": "permissions" },
-        { "type": "divider" },
-        { "type": "tag", "name": "firewall" },
-        { "type": "tag", "name": "ufw" },
-        { "type": "divider" },
-        { "type": "tag", "name": "docker" },
-        { "type": "tag", "name": "compose" },
-        { "type": "tag", "name": "networking" },
-        { "type": "divider" },
-        { "type": "tag", "name": "deploy" },
-        { "type": "tag", "name": "rsync" },
-        { "type": "divider" },
-        { "type": "tag", "name": "node" },
-        { "type": "tag", "name": "version managers" },
-        { "type": "divider" },
-        { "type": "tag", "name": "tmux" },
-        { "type": "tag", "name": "postgres" },
-        { "type": "tag", "name": "tooling" },
-        { "type": "divider" },
-        { "type": "tag", "name": "youtube" }
+        {
+            "type": "tag",
+            "name": "nginx"
+        },
+        {
+            "type": "tag",
+            "name": "certs"
+        },
+        {
+            "type": "tag",
+            "name": "journalctl"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "ssh"
+        },
+        {
+            "type": "tag",
+            "name": "permissions"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "firewall"
+        },
+        {
+            "type": "tag",
+            "name": "ufw"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "docker"
+        },
+        {
+            "type": "tag",
+            "name": "compose"
+        },
+        {
+            "type": "tag",
+            "name": "networking"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "deploy"
+        },
+        {
+            "type": "tag",
+            "name": "rsync"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "node"
+        },
+        {
+            "type": "tag",
+            "name": "version managers"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "tmux"
+        },
+        {
+            "type": "tag",
+            "name": "postgres"
+        },
+        {
+            "type": "tag",
+            "name": "tooling"
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "tag",
+            "name": "youtube"
+        }
     ]
 }

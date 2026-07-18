@@ -410,13 +410,28 @@ function phase2_suggestions_path(string $dir): string
 }
 
 /**
+ * Panel keys that accept whole-section Suggest notes (match phase2 buckets).
+ *
+ * @return list<string>
+ */
+function phase2_suggestion_panel_keys(): array
+{
+    return ['tasks', 'reference', 'articleCandidates'];
+}
+
+/**
  * @param mixed $data
- * @return array{panel: array{reference: string}, items: array<string, string>}
+ * @return array{panel: array{tasks: string, reference: string, articleCandidates: string}, items: array<string, string>}
  */
 function normalize_phase2_suggestions($data): array
 {
+    $panelKeys = phase2_suggestion_panel_keys();
     $out = [
-        'panel' => ['reference' => ''],
+        'panel' => [
+            'tasks' => '',
+            'reference' => '',
+            'articleCandidates' => '',
+        ],
         'items' => [],
     ];
     if (!is_array($data)) {
@@ -425,7 +440,9 @@ function normalize_phase2_suggestions($data): array
 
     $panel = $data['panel'] ?? null;
     if (is_array($panel)) {
-        $out['panel']['reference'] = trim((string) ($panel['reference'] ?? ''));
+        foreach ($panelKeys as $key) {
+            $out['panel'][$key] = trim((string) ($panel[$key] ?? ''));
+        }
     }
 
     $items = $data['items'] ?? null;
@@ -447,21 +464,26 @@ function normalize_phase2_suggestions($data): array
 }
 
 /**
- * @return array{panel: array{reference: string}, items: array<string, string>}
+ * @return array{panel: array{tasks: string, reference: string, articleCandidates: string}, items: array<string, string>}
  */
 function parse_phase2_suggestions_md(string $raw): array
 {
+    $panelKeys = phase2_suggestion_panel_keys();
     $out = [
-        'panel' => ['reference' => ''],
+        'panel' => [
+            'tasks' => '',
+            'reference' => '',
+            'articleCandidates' => '',
+        ],
         'items' => [],
     ];
 
     $raw = str_replace(["\r\n", "\r"], "\n", $raw);
     $lines = explode("\n", $raw);
-    $section = null; // 'panel:reference' | 'item:{id}'
+    $section = null; // 'panel:{key}' | 'item:{id}'
     $buf = [];
 
-    $flush = static function () use (&$section, &$buf, &$out): void {
+    $flush = static function () use (&$section, &$buf, &$out, $panelKeys): void {
         if ($section === null) {
             $buf = [];
             return;
@@ -471,8 +493,11 @@ function parse_phase2_suggestions_md(string $raw): array
         if ($text === '') {
             return;
         }
-        if ($section === 'panel:reference') {
-            $out['panel']['reference'] = $text;
+        if (strpos($section, 'panel:') === 0) {
+            $key = substr($section, 6);
+            if (in_array($key, $panelKeys, true)) {
+                $out['panel'][$key] = $text;
+            }
             return;
         }
         if (strpos($section, 'item:') === 0) {
@@ -484,9 +509,17 @@ function parse_phase2_suggestions_md(string $raw): array
     };
 
     foreach ($lines as $line) {
-        if (preg_match('/^##\s+Panel:\s*reference\s*$/i', $line)) {
+        if (preg_match('/^##\s+Panel:\s*(tasks|reference|articleCandidates)\s*$/i', $line, $m)) {
             $flush();
-            $section = 'panel:reference';
+            $keyMap = [
+                'tasks' => 'tasks',
+                'reference' => 'reference',
+                'articlecandidates' => 'articleCandidates',
+            ];
+            $key = $keyMap[strtolower($m[1])] ?? null;
+            if ($key !== null) {
+                $section = 'panel:' . $key;
+            }
             continue;
         }
         if (preg_match('/^##\s+Item:\s*(\S+)\s*$/i', $line, $m)) {
@@ -507,18 +540,21 @@ function parse_phase2_suggestions_md(string $raw): array
 }
 
 /**
- * @param array{panel: array{reference: string}, items: array<string, string>} $data
+ * @param array{panel: array{tasks: string, reference: string, articleCandidates: string}, items: array<string, string>} $data
  */
 function format_phase2_suggestions_md(array $data): string
 {
     $data = normalize_phase2_suggestions($data);
     $parts = ["# Phase 2 suggestions", ''];
 
-    $panelRef = $data['panel']['reference'];
-    if ($panelRef !== '') {
-        $parts[] = '## Panel: reference';
+    foreach (phase2_suggestion_panel_keys() as $key) {
+        $panelText = $data['panel'][$key];
+        if ($panelText === '') {
+            continue;
+        }
+        $parts[] = '## Panel: ' . $key;
         $parts[] = '';
-        $parts[] = $panelRef;
+        $parts[] = $panelText;
         $parts[] = '';
     }
 
@@ -534,7 +570,7 @@ function format_phase2_suggestions_md(array $data): string
 }
 
 /**
- * @return array{panel: array{reference: string}, items: array<string, string>}
+ * @return array{panel: array{tasks: string, reference: string, articleCandidates: string}, items: array<string, string>}
  */
 function load_phase2_suggestions(string $dir): array
 {
@@ -558,10 +594,15 @@ function save_phase2_suggestions(string $dir, array $data): bool
     $md = format_phase2_suggestions_md($normalized);
     $path = phase2_suggestions_path($dir);
 
-    if (
-        $normalized['panel']['reference'] === ''
-        && $normalized['items'] === []
-    ) {
+    $panelEmpty = true;
+    foreach (phase2_suggestion_panel_keys() as $key) {
+        if ($normalized['panel'][$key] !== '') {
+            $panelEmpty = false;
+            break;
+        }
+    }
+
+    if ($panelEmpty && $normalized['items'] === []) {
         if (is_file($path)) {
             return unlink($path);
         }

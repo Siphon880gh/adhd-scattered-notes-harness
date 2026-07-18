@@ -242,10 +242,8 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
             $suggestFieldId = 'suggest-' . ($id !== '' ? $id : ('tmp-' . substr(md5($title . $body), 0, 8)));
             echo '<div class="item-card__suggest" data-item-suggest>';
             echo '<button type="button" class="item-card__suggest-toggle" data-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for AI">';
+            echo '<svg class="suggest-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>';
             echo '<span class="item-card__suggest-label">Suggest</span>';
-            if ($hasSuggestion) {
-                echo '<span class="item-card__suggest-dot" aria-hidden="true"></span>';
-            }
             echo '</button>';
             echo '<div class="item-card__suggest-panel" data-suggest-panel hidden>';
             echo '<label class="item-card__suggest-caption" for="' . e($suggestFieldId) . '">Tell the AI how to change this note</label>';
@@ -489,7 +487,7 @@ $showEmpty = !$folderExists;
         <h2>Phase 2 — organized notes</h2>
         <p>
             Review whether the AI parsed your notes correctly: that it did not drop lines unnecessarily, and that each card reads the way you meant.
-            Want a note changed (different title, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on the Reference panel header for whole-panel feedback — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
+            Want a note changed (different title, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on a section header for whole-panel feedback (tagging, heading style, ordering) — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
             Green-check items as you review them (saved into <code>phase2.json</code>).
             Move items between panels, or add tags on the right (filter chips appear at the top).
             Phase 3 will ultimately tag items for you by area — optional tags here are fine in the meantime.
@@ -572,17 +570,36 @@ $showEmpty = !$folderExists;
             $itemSuggestions = is_array($phase2Suggestions['items'] ?? null)
                 ? $phase2Suggestions['items']
                 : [];
-            $panelReferenceSuggestion = (string) ($phase2Suggestions['panel']['reference'] ?? '');
-            $hasPanelReferenceSuggestion = !$reviewLocked && $panelReferenceSuggestion !== '';
+            $panelSuggestions = is_array($phase2Suggestions['panel'] ?? null)
+                ? $phase2Suggestions['panel']
+                : [];
             $sections = [
-                'tasks' => ['Scattered', 'No scattered items yet.', $tasks],
-                'reference' => ['Reference', 'No reference items yet.', $reference],
-                'articleCandidates' => ['Articles', 'No article candidates yet.', $articles],
+                'tasks' => [
+                    'Scattered',
+                    'No scattered items yet.',
+                    $tasks,
+                    'e.g. prefer short action headings; order by urgency; tag by server area…',
+                ],
+                'reference' => [
+                    'Reference',
+                    'No reference items yet.',
+                    $reference,
+                    'e.g. keep commands and facts here; move how-to steps to Scattered…',
+                ],
+                'articleCandidates' => [
+                    'Articles',
+                    'No article candidates yet.',
+                    $articles,
+                    'e.g. group related ideas; prefer question-style headings; drop weak candidates…',
+                ],
             ];
             foreach ($sections as $bucketKey => $sectionMeta):
-                [$sectionTitle, $emptyLabel, $sectionItems] = $sectionMeta;
+                [$sectionTitle, $emptyLabel, $sectionItems, $panelSuggestPlaceholder] = $sectionMeta;
+                $panelSuggestion = (string) ($panelSuggestions[$bucketKey] ?? '');
+                $hasPanelSuggestion = !$reviewLocked && $panelSuggestion !== '';
+                $suggestPanelId = 'suggest-panel-' . $bucketKey;
                 ?>
-                <section class="section-block<?= ($bucketKey === 'reference' && $hasPanelReferenceSuggestion) ? ' has-panel-suggestion' : '' ?>" id="section-<?= e($bucketKey) ?>" data-section-bucket="<?= e($bucketKey) ?>">
+                <section class="section-block<?= $hasPanelSuggestion ? ' has-panel-suggestion' : '' ?>" id="section-<?= e($bucketKey) ?>" data-section-bucket="<?= e($bucketKey) ?>">
                     <div class="section-block__header">
                         <button type="button"
                                 class="section-block__collapse"
@@ -608,51 +625,52 @@ $showEmpty = !$folderExists;
                                 </div>
                             </div>
                         <?php endif; ?>
-                        <?php if (!$reviewLocked && $bucketKey === 'reference'): ?>
-                            <div class="section-block__suggest" data-panel-suggest="reference">
-                                <button type="button"
-                                        class="section-block__suggest-toggle"
-                                        data-panel-suggest-toggle
-                                        aria-expanded="false"
-                                        title="Suggestion for Reference panel"
-                                        aria-label="Suggestion for Reference panel">
-                                    Suggest
-                                    <?php if ($hasPanelReferenceSuggestion): ?>
-                                        <span class="section-block__suggest-dot" aria-hidden="true"></span>
-                                    <?php endif; ?>
-                                </button>
-                            </div>
-                        <?php endif; ?>
-                        <button type="button"
-                                class="section-block__rearrange"
-                                data-rearrange-toggle
-                                aria-pressed="false"
-                                title="Rearrange items"
-                                aria-label="Rearrange <?= e($sectionTitle) ?> items">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <path d="M8 9l-3 3 3 3M16 9l3 3-3 3M5 12h14"/>
-                            </svg>
-                        </button>
-                        <button type="button"
-                                class="section-block__copy"
-                                data-copy-section
-                                title="Copy visible items"
-                                aria-label="Copy visible <?= e($sectionTitle) ?> items">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <rect x="9" y="9" width="13" height="13" rx="2"/>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                            </svg>
-                        </button>
+                        <div class="section-block__header-actions">
+                            <?php if (!$reviewLocked): ?>
+                                <div class="section-block__suggest" data-panel-suggest="<?= e($bucketKey) ?>">
+                                    <button type="button"
+                                            class="section-block__suggest-toggle"
+                                            data-panel-suggest-toggle
+                                            aria-expanded="false"
+                                            title="Suggestion for <?= e($sectionTitle) ?> section"
+                                            aria-label="Suggestion for <?= e($sectionTitle) ?> section">
+                                        <svg class="suggest-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                                        <span>Suggest</span>
+                                    </button>
+                                </div>
+                                <span class="section-block__actions-divider" aria-hidden="true"></span>
+                            <?php endif; ?>
+                            <button type="button"
+                                    class="section-block__rearrange"
+                                    data-rearrange-toggle
+                                    aria-pressed="false"
+                                    title="Rearrange items"
+                                    aria-label="Rearrange <?= e($sectionTitle) ?> items">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M8 9l-3 3 3 3M16 9l3 3-3 3M5 12h14"/>
+                                </svg>
+                            </button>
+                            <button type="button"
+                                    class="section-block__copy"
+                                    data-copy-section
+                                    title="Copy visible items"
+                                    aria-label="Copy visible <?= e($sectionTitle) ?> items">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
-                    <?php if (!$reviewLocked && $bucketKey === 'reference'): ?>
+                    <?php if (!$reviewLocked): ?>
                         <div class="section-block__suggest-panel" data-panel-suggest-panel hidden>
-                            <label class="section-block__suggest-caption" for="suggest-panel-reference">Tell the AI how to change the Reference panel</label>
+                            <label class="section-block__suggest-caption" for="<?= e($suggestPanelId) ?>">Tell the AI how to change the <?= e($sectionTitle) ?> section</label>
                             <textarea class="section-block__suggest-input"
-                                      data-panel-suggest-input="reference"
-                                      id="suggest-panel-reference"
+                                      data-panel-suggest-input="<?= e($bucketKey) ?>"
+                                      id="<?= e($suggestPanelId) ?>"
                                       rows="3"
                                       maxlength="4000"
-                                      placeholder="e.g. keep commands and facts here; move how-to steps to Scattered…"><?= e($panelReferenceSuggestion) ?></textarea>
+                                      placeholder="<?= e($panelSuggestPlaceholder) ?>"><?= e($panelSuggestion) ?></textarea>
                         </div>
                     <?php endif; ?>
                     <div class="section-block__body" id="section-body-<?= e($bucketKey) ?>" data-section-body>

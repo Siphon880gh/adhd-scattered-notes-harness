@@ -89,7 +89,7 @@ Visit the web app and check that things are properly organized. In the app you c
 
 - **Move** items between Scattered / Reference / Articles (Move dropdown on each card)
 - **Green-check** items as you review them (circle next to the title; saved into `phase2.json`)
-- **Suggest** on any card (and on the Reference panel header) — tell the AI how to change a note (rewrite, merge, move, keep a detail); saved to `phase2-suggestions.md` for the next pass
+- **Suggest** on any card (and on each section header: Scattered / Reference / Articles) — tell the AI how to change a note or a whole section (rewrite, merge, move, tagging, heading style, ordering); saved to `phase2-suggestions.md` for the next pass
 - **Tag** any item on the right; new tags appear in the **Filter** bar at the top (optional — Phase 3 will tag by area for you)
 - **Collapse / expand** each panel from its header
 - **Rearrange** items inside a panel: click the ↔ icon, drag cards, then release (or click ↔ again) to finish — order is saved
@@ -175,3 +175,15 @@ Reload the app. The main view shows **Scattered**, **Reference**, and **Articles
 Use the hamburger (or **B**) to open or close original notes. Each source line shows what it became (`mapped`, `merged`, `reference`, `dropped_noise`, etc.) so nothing disappears silently.
 
 ![Phase 2: line accounting panel](docs/screenshots/g.png)
+
+### 9. Phase 2 — suggest at the group level
+
+On a section header (Scattered / Reference / Articles), click **Suggest** and tell the AI how to change every note in that group—for example, heading style, ordering, or tagging. The note is saved to `phase2-suggestions.md` for the next pass.
+
+![Phase 2: giving group-level Suggest instructions](docs/screenshots/suggest-section-2.png)
+
+### 10. Phase 3 — group instructions applied
+
+After you advance, those section-level instructions are applied across the whole group. Here, “Precede each heading with Task:” rewrote every Scattered heading; Phase 3 then locks Suggest and green-check so you can filter and Copy into your notes app.
+
+![Phase 3: group Suggest instructions applied to all notes in the section](docs/screenshots/suggest-section-1.png)

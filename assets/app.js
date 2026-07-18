@@ -523,8 +523,9 @@
   var suggestionsSaveTimer = null;
   var organizedState = null;
   var filterLayoutState = [];
+  var PANEL_SUGGEST_KEYS = ["tasks", "reference", "articleCandidates"];
   var suggestionsState = {
-    panel: { reference: "" },
+    panel: { tasks: "", reference: "", articleCandidates: "" },
     items: {},
   };
   var filterDrag = {
@@ -629,12 +630,14 @@
 
   function normalizeSuggestionsState(data) {
     var next = {
-      panel: { reference: "" },
+      panel: { tasks: "", reference: "", articleCandidates: "" },
       items: {},
     };
     if (!data || typeof data !== "object") return next;
     if (data.panel && typeof data.panel === "object") {
-      next.panel.reference = String(data.panel.reference || "").trim();
+      PANEL_SUGGEST_KEYS.forEach(function (key) {
+        next.panel[key] = String(data.panel[key] || "").trim();
+      });
     }
     if (data.items && typeof data.items === "object") {
       Object.keys(data.items).forEach(function (id) {
@@ -667,32 +670,12 @@
     if (!card) return;
     var has = !!(text && String(text).trim());
     card.classList.toggle("has-suggestion", has);
-    var toggle = qs("[data-suggest-toggle]", card);
-    var dot = qs(".item-card__suggest-dot", card);
-    if (has && !dot && toggle) {
-      dot = document.createElement("span");
-      dot.className = "item-card__suggest-dot";
-      dot.setAttribute("aria-hidden", "true");
-      toggle.appendChild(dot);
-    } else if (!has && dot) {
-      dot.remove();
-    }
   }
 
   function syncPanelSuggestionUi(section, text) {
     if (!section) return;
     var has = !!(text && String(text).trim());
     section.classList.toggle("has-panel-suggestion", has);
-    var toggle = qs("[data-panel-suggest-toggle]", section);
-    var dot = qs(".section-block__suggest-dot", section);
-    if (has && !dot && toggle) {
-      dot = document.createElement("span");
-      dot.className = "section-block__suggest-dot";
-      dot.setAttribute("aria-hidden", "true");
-      toggle.appendChild(dot);
-    } else if (!has && dot) {
-      dot.remove();
-    }
   }
 
   function setItemSuggestion(id, text) {
@@ -709,10 +692,13 @@
   }
 
   function setPanelSuggestion(panel, text) {
-    if (panel !== "reference") return;
+    if (PANEL_SUGGEST_KEYS.indexOf(panel) === -1) return;
     var trimmed = String(text || "").trim();
-    suggestionsState.panel.reference = trimmed;
-    var section = qs('[data-section-bucket="reference"]', phase2Root);
+    suggestionsState.panel[panel] = trimmed;
+    var section = qs(
+      '[data-section-bucket="' + String(panel).replace(/"/g, "") + '"]',
+      phase2Root
+    );
     syncPanelSuggestionUi(section, trimmed);
     scheduleSuggestionsSave();
   }

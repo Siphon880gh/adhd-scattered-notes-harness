@@ -1,5 +1,9 @@
 # Phase 2 suggestions
 
+## Panel: tasks
+
+Precede each heading with Task:
+
 ## Item: t1
 
 compared nginx -t with ___ other command

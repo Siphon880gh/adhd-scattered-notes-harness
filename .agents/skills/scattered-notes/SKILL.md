@@ -35,7 +35,7 @@ Per batch folder `inputs/{folder}/`:
 | `*.md`, `*.txt` | Raw scattered notes |
 | `phase1.json` | Uncertain marks + YouTube enrichments |
 | `phase2.json` | Organized notes + per-line blame map + item tags (+ optional `filterLayout`) |
-| `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole Reference panel; **read before writing/revising Phase 2** |
+| `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole-section panels (Scattered / Reference / Articles); **read before writing/revising Phase 2** |
 
 Project root:
 
@@ -118,9 +118,17 @@ Format (app-owned; preserve structure when the user edits via the app):
 ```markdown
 # Phase 2 suggestions
 
+## Panel: tasks
+
+Optional notes about the whole Scattered section (tagging, heading style, ordering, what belongs here).
+
 ## Panel: reference
 
-Optional notes about the whole Reference panel (grouping, tone, what belongs here).
+Optional notes about the whole Reference section (grouping, tone, what belongs here).
+
+## Panel: articleCandidates
+
+Optional notes about the whole Articles section (grouping, heading style, weak candidates to drop).
 
 ## Item: t1
 
@@ -131,9 +139,10 @@ Optional notes about organized item id `t1` (wrong bucket, merge, rewrite headin
 …
 ```
 
-- `## Panel: reference` — guidance for the entire Reference panel.
+- `## Panel: tasks` / `## Panel: reference` / `## Panel: articleCandidates` — guidance for an entire section (tagging preferences, heading/formatting style, ordering, what belongs in that bucket).
 - `## Item: {id}` — guidance for one organized item (`t1`, `r1`, `a1`, …). Match by `id` from `phase2.json`.
 - When applying an item suggestion: rewrite `title` (heading), `body`, or **both**, as needed. Leave a field unchanged only when the suggestion does not call for changing it.
+- When applying a panel suggestion: apply across items in that section (retitle style, reorder, retag, move misfits out, etc.) without inventing requests the user did not write.
 - Omit empty sections. Ignore unknown item ids (item may have been removed).
 - The app POSTs to `index.php?action=save-suggestions` to write this file. Do not wipe it when rewriting `phase2.json`.
 
@@ -302,12 +311,12 @@ Phase 1 may loop: user explains → update root `shorthands.md` → rewrite `pha
 Only after the user confirms Phase 1 is done:
 
 1. Set `app.config.json` `"phase": 2`.
-2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: reference` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`** as needed.
+2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: tasks|reference|articleCandidates` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`**, and applying whole-section guidance (tagging / heading style / ordering) as needed.
 3. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
 4. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
 5. Account for every line in `blame` — fidelity first; do not silently drop details.
 6. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md`.
-7. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or the Reference panel header for whole-panel feedback) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
+7. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
    - **green-check** items as they review;
    - **add tags** or **move items** between Scattered / Reference / Articles (and rearrange within a panel);
    - those panel edits **save into `phase2.json`** via the PHP endpoint so this chat can see them later;
