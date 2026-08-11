@@ -161,6 +161,41 @@ if (
     exit;
 }
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'save-phase1-suggestions'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase !== 1) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Phase 1 suggestions are only available in Phase 1.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with shorthands and/or enrichments.']);
+        exit;
+    }
+
+    $suggestions = normalize_phase1_suggestions($payload);
+    if (!save_phase1_suggestions($dir, $suggestions)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write phase1-suggestions.md.']);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'suggestions' => $suggestions,
+    ]);
+    exit;
+}
+
 $noteFiles = $folderExists ? list_note_files($dir) : [];
 $activeFile = isset($_GET['file']) ? (string) $_GET['file'] : '';
 if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
@@ -169,6 +204,9 @@ if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
 
 $phase1 = $folderExists ? load_json_file($dir . '/phase1.json') : null;
 $phase2 = $folderExists ? load_json_file($dir . '/phase2.json') : null;
+$phase1Suggestions = $folderExists
+    ? load_phase1_suggestions($dir)
+    : normalize_phase1_suggestions(null);
 $phase2Suggestions = $folderExists
     ? load_phase2_suggestions($dir)
     : normalize_phase2_suggestions(null);
@@ -437,7 +475,14 @@ $showEmpty = !$folderExists;
             Reload this page after the skill updates <code>phase1.json</code>.
         </p>
         <ul>
-            <li>In Cursor / Claude Code, explain any flagged shorthand when advancing to phase 2 (the skill updates the app-wide <code>shorthands.md</code>).</li>
+            <li>
+                For flagged shorthand: explain it in Cursor / Claude Code, <em>or</em> add an in-app <strong>Suggest</strong> note.
+                One Suggest for a shorthand covers every other flag of that same shorthand (they share the same comment).
+            </li>
+            <li>
+                For URLs the skill could read, check the green added notes. If you’re not satisfied, tell Cursor / Claude Code
+                <em>or</em> add an in-app Suggest on that enrichment.
+            </li>
             <li>For blocked URLs, paste text here, then tell chat you pasted so the skill can enrich from it.</li>
             <li>Or say Phase 1 looks good and ask to start Phase 2.</li>
         </ul>
@@ -451,9 +496,9 @@ $showEmpty = !$folderExists;
             <?php else:
                 $fileNavStats = phase1_file_nav_stats($phase1, $noteFiles);
                 ?>
-                <div class="file-nav__cols">
-                    <span class="file-nav__col-file">Name</span>
-                    <div class="file-nav__col-help file-nav__col-help--attention" data-section-info>
+                <div class="file-nav__cols" role="row">
+                    <span class="file-nav__col-file" role="columnheader">Name</span>
+                    <div class="file-nav__col-help file-nav__col-help--attention" data-section-info role="columnheader">
                         <button
                             type="button"
                             class="file-nav__col-btn file-nav__col-btn--attention"
@@ -461,14 +506,14 @@ $showEmpty = !$folderExists;
                             aria-expanded="false"
                             aria-controls="file-nav-tip-attention"
                             title="What ! means"
-                            aria-label="What ! means"
+                            aria-label="Column: needs attention (!)"
                         >!</button>
                         <div class="file-nav__col-tip" id="file-nav-tip-attention" data-section-info-tip role="tooltip">
                             <strong>Needs attention</strong>
                             Shorthands the AI flagged, and blocked URLs that need you to open the page and paste text here.
                         </div>
                     </div>
-                    <div class="file-nav__col-help file-nav__col-help--added" data-section-info>
+                    <div class="file-nav__col-help file-nav__col-help--added" data-section-info role="columnheader">
                         <button
                             type="button"
                             class="file-nav__col-btn file-nav__col-btn--added"
@@ -476,7 +521,7 @@ $showEmpty = !$folderExists;
                             aria-expanded="false"
                             aria-controls="file-nav-tip-added"
                             title="What + means"
-                            aria-label="What + means"
+                            aria-label="Column: added enrichments (+)"
                         >+</button>
                         <div class="file-nav__col-tip" id="file-nav-tip-added" data-section-info-tip role="tooltip">
                             <strong>Added enrichments</strong>
@@ -541,6 +586,13 @@ $showEmpty = !$folderExists;
                         Return to Cursor / Claude Code and run Phase 1 of the skill.
                     </p>
                 <?php endif; ?>
+                <script type="application/json" id="phase1-suggestions-data"><?=
+                    str_replace(
+                        '</',
+                        '<\/',
+                        (string) json_encode($phase1Suggestions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                    )
+                ?></script>
                 <div class="line-view">
                     <?php
                     $lines = lines_for_file($dir, $activeFile, $phase1);
@@ -556,6 +608,10 @@ $showEmpty = !$folderExists;
                         }
                         $youtube = $line['youtube'] ?? null;
                         $link = $line['link'] ?? null;
+                        $enrichmentKey = $activeFile . ':' . $n;
+                        $enrichmentSuggestion = (string) ($phase1Suggestions['enrichments'][$enrichmentKey] ?? '');
+                        $hasEnrichmentSuggestion = $enrichmentSuggestion !== '';
+                        $enrichmentFieldId = 'p1-enrich-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', $enrichmentKey);
                         $hasUncertain = false;
                         foreach ($marks as $mark) {
                             if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
@@ -571,9 +627,32 @@ $showEmpty = !$folderExists;
                                 $addedText .= ' — ' . $ytAbout;
                             }
                             ?>
-                            <div class="line line--added">
+                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
                                 <div class="line__n">+</div>
-                                <div class="line__body"><?= e($addedText) ?></div>
+                                <div class="line__body">
+                                    <div class="line__text"><?= e($addedText) ?></div>
+                                    <div class="line__toolbar">
+                                        <div class="phase1-suggest" data-phase1-suggest data-phase1-suggest-kind="enrichment" data-phase1-suggest-key="<?= e($enrichmentKey) ?>">
+                                            <button type="button" class="phase1-suggest__toggle" data-phase1-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for this enrichment">
+                                                <svg class="suggest-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                                                <span>Suggest</span>
+                                            </button>
+                                            <div class="phase1-suggest__panel" data-phase1-suggest-panel hidden>
+                                                <label class="phase1-suggest__caption" for="<?= e($enrichmentFieldId) ?>">Tell the AI how to change this enrichment</label>
+                                                <textarea
+                                                    class="phase1-suggest__input"
+                                                    id="<?= e($enrichmentFieldId) ?>"
+                                                    data-phase1-suggest-input
+                                                    data-phase1-suggest-kind="enrichment"
+                                                    data-phase1-suggest-key="<?= e($enrichmentKey) ?>"
+                                                    rows="3"
+                                                    maxlength="4000"
+                                                    placeholder="e.g. about should focus on X; title is wrong…"
+                                                ><?= e($enrichmentSuggestion) ?></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         <?php endif; ?>
                         <?php
@@ -585,16 +664,41 @@ $showEmpty = !$folderExists;
                                 $linkAddedText .= ' — ' . $linkAbout;
                             }
                             ?>
-                            <div class="line line--added">
+                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
                                 <div class="line__n">+</div>
-                                <div class="line__body"><?= e($linkAddedText) ?></div>
+                                <div class="line__body">
+                                    <div class="line__text"><?= e($linkAddedText) ?></div>
+                                    <div class="line__toolbar">
+                                        <div class="phase1-suggest" data-phase1-suggest data-phase1-suggest-kind="enrichment" data-phase1-suggest-key="<?= e($enrichmentKey) ?>">
+                                            <button type="button" class="phase1-suggest__toggle" data-phase1-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for this enrichment">
+                                                <svg class="suggest-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                                                <span>Suggest</span>
+                                            </button>
+                                            <div class="phase1-suggest__panel" data-phase1-suggest-panel hidden>
+                                                <label class="phase1-suggest__caption" for="<?= e($enrichmentFieldId) ?>-link">Tell the AI how to change this enrichment</label>
+                                                <textarea
+                                                    class="phase1-suggest__input"
+                                                    id="<?= e($enrichmentFieldId) ?>-link"
+                                                    data-phase1-suggest-input
+                                                    data-phase1-suggest-kind="enrichment"
+                                                    data-phase1-suggest-key="<?= e($enrichmentKey) ?>"
+                                                    rows="3"
+                                                    maxlength="4000"
+                                                    placeholder="e.g. about should focus on X; pull the complexity table…"
+                                                ><?= e($enrichmentSuggestion) ?></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         <?php endif; ?>
                         <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?>">
                             <div class="line__n"><?= $n > 0 ? (int) $n : '' ?></div>
                             <div class="line__body">
-                                <?= e($text) ?>
-                                <?php foreach ($marks as $mark):
+                                <div class="line__text"><?= e($text) ?></div>
+                                <?php
+                                $flagBits = '';
+                                foreach ($marks as $mark):
                                     if (!is_array($mark)) {
                                         continue;
                                     }
@@ -604,9 +708,46 @@ $showEmpty = !$folderExists;
                                     if ($note !== '') {
                                         $label .= ': ' . $note;
                                     }
+                                    $isUncertain = ($mark['type'] ?? '') === 'uncertain';
+                                    $tokenKey = phase1_shorthand_key($token);
+                                    if ($isUncertain && $tokenKey !== ''):
+                                        $shSuggestion = phase1_shorthand_suggestion($phase1Suggestions, $tokenKey);
+                                        $hasShSuggestion = $shSuggestion !== '';
+                                        $fieldId = 'p1-sh-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', $tokenKey) . '-' . $n;
+                                        ob_start();
+                                        ?>
+                                        <span class="mark-chip-wrap<?= $hasShSuggestion ? ' has-phase1-suggestion' : '' ?>" data-phase1-shorthand-wrap="<?= e($tokenKey) ?>">
+                                            <span class="mark-chip"><?= e($label) ?></span>
+                                            <div class="phase1-suggest" data-phase1-suggest data-phase1-suggest-kind="shorthand" data-phase1-suggest-key="<?= e($tokenKey) ?>">
+                                                <button type="button" class="phase1-suggest__toggle" data-phase1-suggest-toggle aria-expanded="false" title="Suggestion for this shorthand (shared across all flags of this type)" aria-label="Suggestion for shorthand <?= e($tokenKey) ?>">
+                                                    <svg class="suggest-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                                                    <span>Suggest</span>
+                                                </button>
+                                                <div class="phase1-suggest__panel" data-phase1-suggest-panel hidden>
+                                                    <label class="phase1-suggest__caption" for="<?= e($fieldId) ?>">One note covers every <code><?= e($tokenKey) ?></code> flag</label>
+                                                    <textarea
+                                                        class="phase1-suggest__input"
+                                                        id="<?= e($fieldId) ?>"
+                                                        data-phase1-suggest-input
+                                                        data-phase1-suggest-kind="shorthand"
+                                                        data-phase1-suggest-key="<?= e($tokenKey) ?>"
+                                                        rows="3"
+                                                        maxlength="4000"
+                                                        placeholder="e.g. wtf means write the function"
+                                                    ><?= e($shSuggestion) ?></textarea>
+                                                </div>
+                                            </div>
+                                        </span>
+                                        <?php
+                                        $flagBits .= ob_get_clean();
+                                    else:
+                                        $flagBits .= '<span class="mark-chip">' . e($label) . '</span>';
+                                    endif;
+                                endforeach;
+                                if ($flagBits !== ''):
                                     ?>
-                                    <span class="mark-chip"><?= e($label) ?></span>
-                                <?php endforeach; ?>
+                                    <div class="line__toolbar"><?= $flagBits ?></div>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <?php

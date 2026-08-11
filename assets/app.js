@@ -2064,10 +2064,143 @@
     });
   }
 
-  // Phase 1 blocked-URL paste panels
-  (function initUrlPastePanels() {
+  // Phase 1 blocked-URL paste panels + Suggest notes
+  (function initPhase1Panels() {
     var root = qs("[data-phase1-root]");
     if (!root) return;
+
+    var phase1SuggestTimer = null;
+    var phase1SuggestState = { shorthands: {}, enrichments: {} };
+
+    function normalizePhase1SuggestState(data) {
+      var next = { shorthands: {}, enrichments: {} };
+      if (!data || typeof data !== "object") return next;
+      if (data.shorthands && typeof data.shorthands === "object") {
+        Object.keys(data.shorthands).forEach(function (token) {
+          var text = String(data.shorthands[token] || "").trim();
+          if (!token || !text) return;
+          next.shorthands[token] = text;
+        });
+      }
+      if (data.enrichments && typeof data.enrichments === "object") {
+        Object.keys(data.enrichments).forEach(function (id) {
+          var text = String(data.enrichments[id] || "").trim();
+          if (!id || !text) return;
+          next.enrichments[id] = text;
+        });
+      }
+      return next;
+    }
+
+    try {
+      var dataEl = qs("#phase1-suggestions-data");
+      phase1SuggestState = normalizePhase1SuggestState(
+        dataEl ? JSON.parse(dataEl.textContent || "{}") : null
+      );
+    } catch (err) {
+      phase1SuggestState = normalizePhase1SuggestState(null);
+    }
+
+    function findShorthandTokenKey(token) {
+      var fold = String(token || "").trim().toLowerCase();
+      if (!fold) return "";
+      var keys = Object.keys(phase1SuggestState.shorthands);
+      for (var i = 0; i < keys.length; i++) {
+        if (String(keys[i]).toLowerCase() === fold) return keys[i];
+      }
+      return String(token || "").trim();
+    }
+
+    function shorthandInputsForToken(token) {
+      var fold = String(token || "").trim().toLowerCase();
+      return qsa('[data-phase1-suggest-input][data-phase1-suggest-kind="shorthand"]', root).filter(
+        function (el) {
+          return String(el.getAttribute("data-phase1-suggest-key") || "").toLowerCase() === fold;
+        }
+      );
+    }
+
+    function syncShorthandUi(token, text) {
+      var trimmed = String(text || "").trim();
+      var has = !!trimmed;
+      shorthandInputsForToken(token).forEach(function (input) {
+        if (input.value !== text) input.value = text;
+        var wrap = input.closest("[data-phase1-shorthand-wrap]");
+        if (wrap) wrap.classList.toggle("has-phase1-suggestion", has);
+      });
+    }
+
+    function syncEnrichmentUi(key, text) {
+      var trimmed = String(text || "").trim();
+      var has = !!trimmed;
+      qsa(
+        '[data-phase1-suggest-input][data-phase1-suggest-kind="enrichment"][data-phase1-suggest-key="' +
+          String(key).replace(/"/g, "") +
+          '"]',
+        root
+      ).forEach(function (input) {
+        if (input.value !== text) input.value = text;
+      });
+      qsa('[data-phase1-enrichment-wrap="' + String(key).replace(/"/g, "") + '"]', root).forEach(
+        function (wrap) {
+          wrap.classList.toggle("has-phase1-suggestion", has);
+        }
+      );
+    }
+
+    function savePhase1Suggestions() {
+      fetch("index.php?action=save-phase1-suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(phase1SuggestState),
+      }).catch(function () {
+        // local save failure — UI state still updated
+      });
+    }
+
+    function schedulePhase1SuggestSave() {
+      if (phase1SuggestTimer) clearTimeout(phase1SuggestTimer);
+      phase1SuggestTimer = setTimeout(savePhase1Suggestions, 300);
+    }
+
+    function setShorthandSuggestion(token, text) {
+      var key = String(token || "").trim();
+      if (!key) return;
+      var trimmed = String(text || "").trim();
+      var storedKey = findShorthandTokenKey(key);
+      Object.keys(phase1SuggestState.shorthands).forEach(function (existing) {
+        if (String(existing).toLowerCase() === key.toLowerCase()) {
+          delete phase1SuggestState.shorthands[existing];
+        }
+      });
+      if (trimmed) {
+        phase1SuggestState.shorthands[storedKey || key] = trimmed;
+      }
+      syncShorthandUi(key, trimmed ? trimmed : "");
+      schedulePhase1SuggestSave();
+    }
+
+    function setEnrichmentSuggestion(id, text) {
+      if (!id) return;
+      var trimmed = String(text || "").trim();
+      if (trimmed) {
+        phase1SuggestState.enrichments[id] = trimmed;
+      } else {
+        delete phase1SuggestState.enrichments[id];
+      }
+      syncEnrichmentUi(id, trimmed ? trimmed : "");
+      schedulePhase1SuggestSave();
+    }
+
+    function closePhase1SuggestPanels(except) {
+      qsa("[data-phase1-suggest-panel]", root).forEach(function (panel) {
+        if (except && panel === except) return;
+        panel.hidden = true;
+        var wrap = panel.closest("[data-phase1-suggest]");
+        var toggle = wrap ? qs("[data-phase1-suggest-toggle]", wrap) : null;
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      });
+    }
 
     function syncBlockUi(block, hasPaste) {
       block.classList.toggle("has-paste", !!hasPaste);
@@ -2136,11 +2269,47 @@
     }
 
     root.addEventListener("click", function (e) {
+      var suggestToggle = e.target.closest("[data-phase1-suggest-toggle]");
+      if (suggestToggle && root.contains(suggestToggle)) {
+        var suggestWrap = suggestToggle.closest("[data-phase1-suggest]");
+        var suggestPanel = suggestWrap
+          ? qs("[data-phase1-suggest-panel]", suggestWrap)
+          : null;
+        if (!suggestPanel) return;
+        var willOpen = suggestPanel.hidden;
+        closePhase1SuggestPanels(willOpen ? suggestPanel : null);
+        suggestPanel.hidden = !willOpen;
+        suggestToggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        if (willOpen) {
+          var input = qs("[data-phase1-suggest-input]", suggestPanel);
+          if (input) input.focus();
+        }
+        return;
+      }
+
       var btn = e.target.closest("[data-url-save]");
       if (!btn || !root.contains(btn)) return;
       var block = btn.closest("[data-url-block]");
       if (!block) return;
       saveUrlPaste(block);
+    });
+
+    root.addEventListener("input", function (e) {
+      var input = e.target.closest("[data-phase1-suggest-input]");
+      if (!input || !root.contains(input)) return;
+      var kind = input.getAttribute("data-phase1-suggest-kind") || "";
+      var key = input.getAttribute("data-phase1-suggest-key") || "";
+      if (kind === "shorthand") {
+        setShorthandSuggestion(key, input.value);
+      } else if (kind === "enrichment") {
+        setEnrichmentSuggestion(key, input.value);
+      }
+    });
+
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest("[data-phase1-suggest]")) {
+        closePhase1SuggestPanels();
+      }
     });
   })();
 })();

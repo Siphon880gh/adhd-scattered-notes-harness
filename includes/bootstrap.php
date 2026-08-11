@@ -72,6 +72,7 @@ function list_note_files(string $dir): array
     $skip = [
         'shorthands.md' => true,
         'phase2-suggestions.md' => true,
+        'phase1-suggestions.md' => true,
     ];
     $files = [];
 
@@ -847,6 +848,219 @@ function save_phase2_suggestions(string $dir, array $data): bool
     }
 
     if ($panelEmpty && $normalized['items'] === []) {
+        if (is_file($path)) {
+            return unlink($path);
+        }
+        return true;
+    }
+
+    return file_put_contents($path, $md) !== false;
+}
+
+function phase1_suggestions_path(string $dir): string
+{
+    return $dir . '/phase1-suggestions.md';
+}
+
+/**
+ * Normalize shorthand token keys (trim; preserve display casing from first write).
+ */
+function phase1_shorthand_key(string $token): string
+{
+    return trim($token);
+}
+
+/**
+ * @param mixed $data
+ * @return array{shorthands: array<string, string>, enrichments: array<string, string>}
+ */
+function normalize_phase1_suggestions($data): array
+{
+    $out = [
+        'shorthands' => [],
+        'enrichments' => [],
+    ];
+    if (!is_array($data)) {
+        return $out;
+    }
+
+    $shorthands = $data['shorthands'] ?? null;
+    if (is_array($shorthands)) {
+        $seen = [];
+        foreach ($shorthands as $token => $text) {
+            $key = phase1_shorthand_key((string) $token);
+            if ($key === '') {
+                continue;
+            }
+            $body = trim((string) $text);
+            if ($body === '') {
+                continue;
+            }
+            $fold = strtolower($key);
+            if (isset($seen[$fold])) {
+                continue;
+            }
+            $seen[$fold] = true;
+            $out['shorthands'][$key] = $body;
+        }
+    }
+
+    $enrichments = $data['enrichments'] ?? null;
+    if (is_array($enrichments)) {
+        foreach ($enrichments as $id => $text) {
+            $itemId = trim((string) $id);
+            if ($itemId === '' || !preg_match('/^.+:\d+$/', $itemId)) {
+                continue;
+            }
+            $body = trim((string) $text);
+            if ($body === '') {
+                continue;
+            }
+            $out['enrichments'][$itemId] = $body;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * Case-insensitive shorthand lookup.
+ *
+ * @param array{shorthands: array<string, string>, enrichments: array<string, string>} $suggestions
+ */
+function phase1_shorthand_suggestion(array $suggestions, string $token): string
+{
+    $key = phase1_shorthand_key($token);
+    if ($key === '') {
+        return '';
+    }
+    if (isset($suggestions['shorthands'][$key])) {
+        return (string) $suggestions['shorthands'][$key];
+    }
+    $fold = strtolower($key);
+    foreach ($suggestions['shorthands'] as $stored => $text) {
+        if (strtolower((string) $stored) === $fold) {
+            return (string) $text;
+        }
+    }
+    return '';
+}
+
+/**
+ * @return array{shorthands: array<string, string>, enrichments: array<string, string>}
+ */
+function parse_phase1_suggestions_md(string $raw): array
+{
+    $out = [
+        'shorthands' => [],
+        'enrichments' => [],
+    ];
+
+    $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+    $lines = explode("\n", $raw);
+    $section = null; // 'shorthand:{token}' | 'enrichment:{file:line}'
+    $buf = [];
+
+    $flush = static function () use (&$section, &$buf, &$out): void {
+        if ($section === null) {
+            $buf = [];
+            return;
+        }
+        $text = trim(implode("\n", $buf));
+        $buf = [];
+        if ($text === '') {
+            return;
+        }
+        if (strpos($section, 'shorthand:') === 0) {
+            $token = phase1_shorthand_key(substr($section, 10));
+            if ($token !== '') {
+                $out['shorthands'][$token] = $text;
+            }
+            return;
+        }
+        if (strpos($section, 'enrichment:') === 0) {
+            $id = trim(substr($section, 11));
+            if ($id !== '') {
+                $out['enrichments'][$id] = $text;
+            }
+        }
+    };
+
+    foreach ($lines as $line) {
+        if (preg_match('/^##\s+Shorthand:\s*(.+?)\s*$/i', $line, $m)) {
+            $flush();
+            $section = 'shorthand:' . phase1_shorthand_key($m[1]);
+            continue;
+        }
+        if (preg_match('/^##\s+Enrichment:\s*(\S+)\s*$/i', $line, $m)) {
+            $flush();
+            $section = 'enrichment:' . trim($m[1]);
+            continue;
+        }
+        if (preg_match('/^#\s+/', $line) && $section === null) {
+            continue;
+        }
+        if ($section !== null) {
+            $buf[] = $line;
+        }
+    }
+    $flush();
+
+    return normalize_phase1_suggestions($out);
+}
+
+/**
+ * @param array{shorthands: array<string, string>, enrichments: array<string, string>} $data
+ */
+function format_phase1_suggestions_md(array $data): string
+{
+    $data = normalize_phase1_suggestions($data);
+    $parts = ['# Phase 1 suggestions', ''];
+
+    foreach ($data['shorthands'] as $token => $text) {
+        $parts[] = '## Shorthand: ' . $token;
+        $parts[] = '';
+        $parts[] = $text;
+        $parts[] = '';
+    }
+
+    foreach ($data['enrichments'] as $id => $text) {
+        $parts[] = '## Enrichment: ' . $id;
+        $parts[] = '';
+        $parts[] = $text;
+        $parts[] = '';
+    }
+
+    $md = rtrim(implode("\n", $parts));
+    return $md === '# Phase 1 suggestions' ? "# Phase 1 suggestions\n" : $md . "\n";
+}
+
+/**
+ * @return array{shorthands: array<string, string>, enrichments: array<string, string>}
+ */
+function load_phase1_suggestions(string $dir): array
+{
+    $path = phase1_suggestions_path($dir);
+    if (!is_file($path)) {
+        return normalize_phase1_suggestions(null);
+    }
+    $raw = file_get_contents($path);
+    if ($raw === false) {
+        return normalize_phase1_suggestions(null);
+    }
+    return parse_phase1_suggestions_md($raw);
+}
+
+/**
+ * @param array<string, mixed> $data
+ */
+function save_phase1_suggestions(string $dir, array $data): bool
+{
+    $normalized = normalize_phase1_suggestions($data);
+    $md = format_phase1_suggestions_md($normalized);
+    $path = phase1_suggestions_path($dir);
+
+    if ($normalized['shorthands'] === [] && $normalized['enrichments'] === []) {
         if (is_file($path)) {
             return unlink($path);
         }
