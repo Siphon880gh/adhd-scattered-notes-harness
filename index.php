@@ -284,7 +284,7 @@ $showEmpty = !$folderExists;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css?v=1.25">
+    <link rel="stylesheet" href="<?= e(asset_url('assets/app.css')) ?>">
 </head>
 <body>
 <header class="app-header">
@@ -521,18 +521,61 @@ $showEmpty = !$folderExists;
             <div class="tag-filter" data-tag-filter <?= $allTags === [] ? 'hidden' : '' ?>>
                 <span class="tag-filter__label">Filter</span>
                 <button type="button" class="tag-filter__chip is-active" data-filter-tag="" aria-pressed="true">All</button>
-                <?php foreach ($filterLayout as $layoutItem):
-                    if (($layoutItem['type'] ?? '') === 'divider'): ?>
+                <?php
+                $filterGroupOpen = false;
+                foreach ($filterLayout as $layoutItem):
+                    $layoutType = (string) ($layoutItem['type'] ?? '');
+                    if ($layoutType === 'heading'):
+                        $headingName = trim((string) ($layoutItem['name'] ?? ''));
+                        if ($filterGroupOpen) {
+                            echo '</div></div>';
+                            $filterGroupOpen = false;
+                        }
+                        ?>
+                        <div class="tag-filter__cluster">
+                            <div class="tag-filter__heading-row">
+                                <?php if ($headingName !== ''): ?>
+                                    <button type="button" class="tag-filter__heading is-named"><?= e($headingName) ?></button>
+                                <?php else: ?>
+                                    <button type="button" class="tag-filter__heading is-placeholder" title="Name this filter group" aria-label="Name this filter group">
+                                        <svg class="tag-filter__heading-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                                        <span class="tag-filter__heading-label">Name group</span>
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                            <div class="tag-filter__cluster-tags">
+                        <?php
+                        $filterGroupOpen = true;
+                        continue;
+                    endif;
+                    if ($layoutType === 'divider'):
+                        if ($filterGroupOpen) {
+                            echo '</div></div>';
+                            $filterGroupOpen = false;
+                        }
+                        ?>
                         <button type="button"
                                 class="tag-filter__divider"
                                 data-filter-divider
                                 title="Remove divider"
                                 aria-label="Remove divider"></button>
-                    <?php elseif (($layoutItem['type'] ?? '') === 'tag'):
+                    <?php elseif ($layoutType === 'tag'):
                         $tagName = (string) ($layoutItem['name'] ?? '');
                         if ($tagName === '') {
                             continue;
                         }
+                        if (!$filterGroupOpen): ?>
+                            <div class="tag-filter__cluster">
+                                <div class="tag-filter__heading-row">
+                                    <button type="button" class="tag-filter__heading is-placeholder" title="Name this filter group" aria-label="Name this filter group">
+                                        <svg class="tag-filter__heading-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                                        <span class="tag-filter__heading-label">Name group</span>
+                                    </button>
+                                </div>
+                                <div class="tag-filter__cluster-tags">
+                        <?php
+                            $filterGroupOpen = true;
+                        endif;
                         ?>
                         <button type="button"
                                 class="tag-filter__chip"
@@ -542,7 +585,11 @@ $showEmpty = !$folderExists;
                             <?= e($tagName) ?>
                         </button>
                     <?php endif;
-                endforeach; ?>
+                endforeach;
+                if ($filterGroupOpen) {
+                    echo '</div></div>';
+                }
+                ?>
             </div>
             <script type="application/json" id="phase2-organized-data"><?=
                 str_replace(
@@ -818,6 +865,6 @@ $showEmpty = !$folderExists;
     </details>
 </footer>
 
-<script src="assets/app.js?v=1.23"></script>
+<script src="<?= e(asset_url('assets/app.js')) ?>"></script>
 </body>
 </html>

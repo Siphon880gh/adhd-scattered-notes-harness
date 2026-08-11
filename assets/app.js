@@ -736,6 +736,82 @@
     return tags;
   }
 
+  function mergeFilterGroupHeadings(left, right) {
+    var a = String(left || "").trim();
+    var b = String(right || "").trim();
+    if (!a) return b;
+    if (!b) return a;
+    if (a.toLowerCase() === b.toLowerCase()) return a;
+    return a + " + " + b;
+  }
+
+  function parseFilterGroups(layout, availableMap) {
+    var groups = [];
+    var heading = "";
+    var tags = [];
+    var used = {};
+
+    function flush() {
+      if (!tags.length) {
+        heading = "";
+        return;
+      }
+      groups.push({ heading: heading, tags: tags.slice() });
+      heading = "";
+      tags = [];
+    }
+
+    (layout || []).forEach(function (item) {
+      if (!item || typeof item !== "object") return;
+      if (item.type === "heading") {
+        var headingName = String(item.name || "").trim();
+        if (!headingName) return;
+        if (!tags.length) {
+          heading = headingName;
+        } else if (!heading) {
+          heading = headingName;
+        }
+        return;
+      }
+      if (item.type === "divider") {
+        if (tags.length) flush();
+        var after = String(item.heading || "").trim();
+        if (after) heading = after;
+        return;
+      }
+      if (item.type !== "tag") return;
+      var name = String(item.name || "").trim();
+      if (!name) return;
+      var key = name.toLowerCase();
+      if (availableMap) {
+        if (!availableMap[key] || used[key]) return;
+        used[key] = true;
+        tags.push(availableMap[key]);
+        return;
+      }
+      if (used[key]) return;
+      used[key] = true;
+      tags.push(name);
+    });
+    flush();
+
+    return { groups: groups, used: used };
+  }
+
+  function layoutFromFilterGroups(groups) {
+    var next = [];
+    (groups || []).forEach(function (group) {
+      if (!group || !group.tags || !group.tags.length) return;
+      if (next.length) next.push({ type: "divider" });
+      var heading = String(group.heading || "").trim();
+      if (heading) next.push({ type: "heading", name: heading });
+      group.tags.forEach(function (tag) {
+        next.push({ type: "tag", name: tag });
+      });
+    });
+    return next;
+  }
+
   function syncFilterLayout() {
     var available = collectAllTags();
     var availableMap = {};
@@ -743,23 +819,9 @@
       availableMap[tag.toLowerCase()] = tag;
     });
 
-    var next = [];
-    var used = {};
-    (filterLayoutState || []).forEach(function (item) {
-      if (!item || typeof item !== "object") return;
-      if (item.type === "divider") {
-        if (next.length && next[next.length - 1].type === "divider") return;
-        next.push({ type: "divider" });
-        return;
-      }
-      if (item.type !== "tag") return;
-      var name = String(item.name || "").trim();
-      if (!name) return;
-      var key = name.toLowerCase();
-      if (!availableMap[key] || used[key]) return;
-      used[key] = true;
-      next.push({ type: "tag", name: availableMap[key] });
-    });
+    var parsed = parseFilterGroups(filterLayoutState, availableMap);
+    var groups = parsed.groups;
+    var used = parsed.used;
 
     var missing = [];
     available.forEach(function (tag) {
@@ -768,11 +830,15 @@
     missing.sort(function (a, b) {
       return a.localeCompare(b, undefined, { sensitivity: "base" });
     });
-    missing.forEach(function (tag) {
-      next.push({ type: "tag", name: tag });
-    });
+    if (missing.length) {
+      if (!groups.length) {
+        groups.push({ heading: "", tags: missing.slice() });
+      } else {
+        groups[groups.length - 1].tags = groups[groups.length - 1].tags.concat(missing);
+      }
+    }
 
-    filterLayoutState = next;
+    filterLayoutState = layoutFromFilterGroups(groups);
   }
 
   function insertFilterDividerAt(index) {
@@ -780,16 +846,79 @@
     var at = Math.max(0, Math.min(index, filterLayoutState.length));
     if (filterLayoutState[at] && filterLayoutState[at].type === "divider") return;
     if (at > 0 && filterLayoutState[at - 1] && filterLayoutState[at - 1].type === "divider") return;
+
+    var leftTags = 0;
+    for (var i = at - 1; i >= 0; i--) {
+      if (filterLayoutState[i].type === "divider") break;
+      if (filterLayoutState[i].type === "tag") leftTags += 1;
+    }
+    var rightTags = 0;
+    for (var j = at; j < filterLayoutState.length; j++) {
+      if (filterLayoutState[j].type === "divider") break;
+      if (filterLayoutState[j].type === "tag") rightTags += 1;
+    }
+    if (!leftTags || !rightTags) return;
+
     filterLayoutState.splice(at, 0, { type: "divider" });
     rebuildFilterBar();
     scheduleSave();
   }
 
   function removeFilterDividerAt(index) {
+    syncFilterLayout();
     if (!filterLayoutState[index] || filterLayoutState[index].type !== "divider") return;
-    filterLayoutState.splice(index, 1);
+
+    var parsed = parseFilterGroups(filterLayoutState, null);
+    var groups = parsed.groups;
+    var boundary = -1;
+    var cursor = 0;
+    for (var g = 0; g < groups.length - 1; g++) {
+      var group = groups[g];
+      if (group.heading) cursor += 1;
+      cursor += group.tags.length;
+      if (cursor === index) {
+        boundary = g;
+        break;
+      }
+      cursor += 1; // divider
+    }
+    if (boundary < 0) {
+      filterLayoutState.splice(index, 1);
+      rebuildFilterBar();
+      scheduleSave();
+      return;
+    }
+
+    var left = groups[boundary];
+    var right = groups[boundary + 1];
+    groups.splice(boundary, 2, {
+      heading: mergeFilterGroupHeadings(left.heading, right.heading),
+      tags: left.tags.concat(right.tags),
+    });
+    filterLayoutState = layoutFromFilterGroups(groups);
     rebuildFilterBar();
     scheduleSave();
+  }
+
+  function setFilterGroupHeadingAt(groupIndex, nextHeading) {
+    syncFilterLayout();
+    var parsed = parseFilterGroups(filterLayoutState, null);
+    var groups = parsed.groups;
+    if (groupIndex < 0 || groupIndex >= groups.length) return;
+    groups[groupIndex].heading = String(nextHeading || "").trim();
+    filterLayoutState = layoutFromFilterGroups(groups);
+    rebuildFilterBar();
+    scheduleSave();
+  }
+
+  function editFilterGroupHeading(groupIndex, currentHeading) {
+    var current = String(currentHeading || "").trim();
+    var message = current
+      ? "Rename group heading (leave empty to remove):"
+      : "Name this filter group:";
+    var next = window.prompt(message, current);
+    if (next === null) return;
+    setFilterGroupHeadingAt(groupIndex, next);
   }
 
   function moveFilterItem(fromIndex, toIndex) {
@@ -803,12 +932,20 @@
     if (fromIndex < toIndex) insertAt -= 1;
     insertAt = Math.max(0, Math.min(insertAt, next.length));
 
+    // Keep headings anchored to the start of their tag group.
+    if (item.type === "tag" && next[insertAt] && next[insertAt].type === "heading") {
+      insertAt += 1;
+    }
     if (item.type === "divider") {
       if (next[insertAt] && next[insertAt].type === "divider") {
         rebuildFilterBar();
         return;
       }
       if (insertAt > 0 && next[insertAt - 1] && next[insertAt - 1].type === "divider") {
+        rebuildFilterBar();
+        return;
+      }
+      if (next[insertAt] && next[insertAt].type === "heading") {
         rebuildFilterBar();
         return;
       }
@@ -889,8 +1026,97 @@
     });
     bar.appendChild(allBtn);
 
+    var cluster = null;
+    var clusterBody = null;
+    var groupIndex = -1;
+    var currentClusterHeading = "";
+
+    function startCluster(headingName, gIndex) {
+      groupIndex = gIndex;
+      currentClusterHeading = String(headingName || "").trim();
+      cluster = document.createElement("div");
+      cluster.className = "tag-filter__cluster";
+      cluster.setAttribute("data-filter-group", String(gIndex));
+
+      var headingRow = document.createElement("div");
+      headingRow.className = "tag-filter__heading-row";
+
+      var headingBtn = document.createElement("button");
+      headingBtn.type = "button";
+      headingBtn.className = "tag-filter__heading";
+      headingBtn.setAttribute("data-filter-heading", "");
+      headingBtn.setAttribute("data-filter-group", String(gIndex));
+      if (currentClusterHeading) {
+        headingBtn.textContent = currentClusterHeading;
+        headingBtn.classList.add("is-named");
+        headingBtn.setAttribute("title", "Rename or clear group heading");
+        headingBtn.setAttribute(
+          "aria-label",
+          "Group heading: " + currentClusterHeading + ". Click to rename or remove."
+        );
+      } else {
+        headingBtn.classList.add("is-placeholder");
+        headingBtn.setAttribute("title", "Name this filter group");
+        headingBtn.setAttribute("aria-label", "Name this filter group");
+        headingBtn.innerHTML =
+          '<svg class="tag-filter__heading-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>' +
+          '<span class="tag-filter__heading-label">Name group</span>';
+        headingBtn.addEventListener("focus", function () {
+          headingBtn.classList.add("is-active");
+        });
+        headingBtn.addEventListener("blur", function () {
+          headingBtn.classList.remove("is-active");
+        });
+      }
+      var headingValue = currentClusterHeading;
+      headingBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        editFilterGroupHeading(gIndex, headingValue);
+      });
+      if (!currentClusterHeading) {
+        headingRow.addEventListener("click", function (e) {
+          if (e.target.closest(".tag-filter__heading")) return;
+          e.preventDefault();
+          e.stopPropagation();
+          headingBtn.click();
+        });
+      }
+      headingRow.appendChild(headingBtn);
+
+      if (currentClusterHeading) {
+        var clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "tag-filter__heading-clear";
+        clearBtn.setAttribute("title", "Remove group heading");
+        clearBtn.setAttribute("aria-label", "Remove group heading");
+        clearBtn.textContent = "×";
+        clearBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          setFilterGroupHeadingAt(gIndex, "");
+        });
+        headingRow.appendChild(clearBtn);
+      }
+
+      cluster.appendChild(headingRow);
+
+      clusterBody = document.createElement("div");
+      clusterBody.className = "tag-filter__cluster-tags";
+      cluster.appendChild(clusterBody);
+      bar.appendChild(cluster);
+    }
+
     filterLayoutState.forEach(function (item, index) {
+      if (item.type === "heading") {
+        startCluster(item.name, groupIndex + 1);
+        return;
+      }
+
       if (item.type === "divider") {
+        cluster = null;
+        clusterBody = null;
+        currentClusterHeading = "";
         var divider = document.createElement("button");
         divider.type = "button";
         divider.className = "tag-filter__divider";
@@ -910,6 +1136,12 @@
         });
         bar.appendChild(divider);
         return;
+      }
+
+      if (item.type !== "tag") return;
+
+      if (!clusterBody) {
+        startCluster("", groupIndex + 1);
       }
 
       var group = document.createElement("div");
@@ -1001,6 +1233,41 @@
       separator.setAttribute("role", "separator");
       menu.appendChild(separator);
 
+      var headingOption = document.createElement("button");
+      headingOption.type = "button";
+      headingOption.className = "tag-filter__menu-option";
+      headingOption.setAttribute("role", "menuitem");
+      var menuHeading = currentClusterHeading;
+      var thisGroupIndex = groupIndex;
+      headingOption.textContent = menuHeading ? "Rename group heading" : "Name group";
+      headingOption.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeAllFilterMenus();
+        editFilterGroupHeading(thisGroupIndex, menuHeading);
+      });
+      menu.appendChild(headingOption);
+
+      if (menuHeading) {
+        var removeHeadingOption = document.createElement("button");
+        removeHeadingOption.type = "button";
+        removeHeadingOption.className = "tag-filter__menu-option";
+        removeHeadingOption.setAttribute("role", "menuitem");
+        removeHeadingOption.textContent = "Remove group heading";
+        removeHeadingOption.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeAllFilterMenus();
+          setFilterGroupHeadingAt(thisGroupIndex, "");
+        });
+        menu.appendChild(removeHeadingOption);
+      }
+
+      var separator2 = document.createElement("div");
+      separator2.className = "tag-filter__menu-separator";
+      separator2.setAttribute("role", "separator");
+      menu.appendChild(separator2);
+
       var deleteOption = document.createElement("button");
       deleteOption.type = "button";
       deleteOption.className = "tag-filter__menu-option tag-filter__menu-option--danger";
@@ -1032,7 +1299,7 @@
       menuWrap.appendChild(menu);
       group.appendChild(btn);
       group.appendChild(menuWrap);
-      bar.appendChild(group);
+      clusterBody.appendChild(group);
     });
   }
 
