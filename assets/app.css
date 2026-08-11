@@ -251,6 +251,105 @@ body.is-showing-shortcuts .app-header__menu > svg {
   color: var(--ink-muted);
 }
 
+.file-nav__cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.6rem 1.6rem;
+  gap: 0.2rem;
+  align-items: center;
+  margin: 0 0 0.2rem;
+  padding: 0 0.55rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.file-nav__col-help {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.file-nav__col-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.file-nav__col-btn--attention {
+  color: var(--warn);
+}
+
+.file-nav__col-btn--added {
+  color: color-mix(in srgb, var(--added) 55%, var(--ink-muted));
+}
+
+.file-nav__col-btn--attention:hover,
+.file-nav__col-help--attention.is-open .file-nav__col-btn--attention,
+.file-nav__col-btn--attention[aria-expanded="true"] {
+  background: rgba(230, 184, 77, 0.18);
+  border-color: rgba(230, 184, 77, 0.55);
+}
+
+.file-nav__col-btn--added:hover,
+.file-nav__col-help--added.is-open .file-nav__col-btn--added,
+.file-nav__col-btn--added[aria-expanded="true"] {
+  background: rgba(61, 214, 140, 0.12);
+  border-color: rgba(61, 214, 140, 0.4);
+  color: color-mix(in srgb, var(--added) 75%, var(--ink-muted));
+}
+
+.file-nav__col-tip {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  right: auto;
+  z-index: 20;
+  width: min(15.5rem, 70vw);
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #252a31;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.45;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  display: none;
+  transform: none;
+}
+
+.file-nav__col-tip strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.file-nav__col-help:hover .file-nav__col-tip,
+.file-nav__col-help:focus-within .file-nav__col-tip,
+.file-nav__col-help.is-open .file-nav__col-tip {
+  display: block;
+}
+
 .file-nav__list {
   list-style: none;
   margin: 0;
@@ -260,8 +359,12 @@ body.is-showing-shortcuts .app-header__menu > svg {
   gap: 0.25rem;
 }
 
-.file-nav__list a {
-  display: block;
+.file-nav__list a,
+.file-nav__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.6rem 1.6rem;
+  gap: 0.2rem;
+  align-items: center;
   padding: 0.4rem 0.55rem;
   border-radius: var(--radius);
   color: var(--ink);
@@ -270,13 +373,51 @@ body.is-showing-shortcuts .app-header__menu > svg {
   font-size: 0.85rem;
 }
 
-.file-nav__list a:hover {
+.file-nav__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-nav__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.15rem;
+  min-width: 1.15rem;
+  padding: 0 0.15rem;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.file-nav__badge--attention.is-on {
+  background: rgba(230, 184, 77, 0.28);
+  color: var(--warn);
+  box-shadow: inset 0 0 0 1px rgba(230, 184, 77, 0.55);
+}
+
+.file-nav__badge--added.is-on {
+  background: rgba(61, 214, 140, 0.1);
+  color: color-mix(in srgb, var(--added) 70%, var(--ink-muted));
+}
+
+.file-nav__list a:hover,
+.file-nav__row:hover {
   background: var(--bg-elevated);
 }
 
-.file-nav__list a.is-active {
+.file-nav__list a.is-active,
+.file-nav__row.is-active {
   background: var(--bg-elevated);
   color: var(--accent);
+}
+
+.file-nav__row.has-attention:not(.is-active) {
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 
 .main {
@@ -377,6 +518,118 @@ body.is-showing-shortcuts .app-header__menu > svg {
 
 .line--added .line__n {
   color: var(--added);
+}
+
+.url-block {
+  margin: 0.35rem 0 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(230, 184, 77, 0.45);
+  border-radius: 6px;
+  background: rgba(230, 184, 77, 0.08);
+}
+
+.url-block.has-paste {
+  border-color: rgba(63, 185, 80, 0.45);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.url-block__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.url-block__header strong {
+  font-size: 0.92rem;
+}
+
+.url-block__status {
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+
+.url-block.has-paste .url-block__status {
+  color: var(--added);
+}
+
+.url-block__hint,
+.url-block__url,
+.url-block__intent {
+  margin: 0 0 0.45rem;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.url-block__url a {
+  color: var(--accent);
+  word-break: break-all;
+}
+
+.url-block__intent span {
+  color: var(--ink-muted);
+}
+
+.url-block__label {
+  display: block;
+  margin: 0.55rem 0 0.25rem;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.url-block__input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.url-block__input:focus {
+  outline: 1px solid rgba(230, 184, 77, 0.7);
+  border-color: rgba(230, 184, 77, 0.7);
+}
+
+.url-block__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.url-block__save {
+  appearance: none;
+  border: 1px solid rgba(230, 184, 77, 0.55);
+  border-radius: 4px;
+  background: rgba(230, 184, 77, 0.18);
+  color: var(--warn);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+
+.url-block__save:hover {
+  background: rgba(230, 184, 77, 0.28);
+}
+
+.url-block__save:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.url-block__saved {
+  font-size: 0.78rem;
 }
 
 .mark-chip {

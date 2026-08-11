@@ -2063,4 +2063,84 @@
       jumpToBucketSection(bucket);
     });
   }
+
+  // Phase 1 blocked-URL paste panels
+  (function initUrlPastePanels() {
+    var root = qs("[data-phase1-root]");
+    if (!root) return;
+
+    function syncBlockUi(block, hasPaste) {
+      block.classList.toggle("has-paste", !!hasPaste);
+      var status = qs("[data-url-status]", block);
+      if (status) {
+        status.textContent = hasPaste ? "Saved — return to chat" : "Needs paste";
+      }
+    }
+
+    function saveUrlPaste(block) {
+      var file = block.getAttribute("data-url-file") || "";
+      var line = parseInt(block.getAttribute("data-url-line") || "0", 10);
+      var noteEl = qs("[data-url-note]", block);
+      var pasteEl = qs("[data-url-paste]", block);
+      var saveBtn = qs("[data-url-save]", block);
+      var savedEl = qs("[data-url-saved]", block);
+      var userNote = noteEl ? noteEl.value : "";
+      var userPaste = pasteEl ? pasteEl.value : "";
+      if (saveBtn) saveBtn.disabled = true;
+
+      fetch("index.php?action=save-url-paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: file,
+          line: line,
+          userPaste: userPaste,
+          userNote: userNote,
+        }),
+      })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { ok: res.ok, data: data };
+          });
+        })
+        .then(function (result) {
+          if (!result.ok || !result.data || !result.data.ok) {
+            throw new Error(
+              (result.data && result.data.error) || "Save failed"
+            );
+          }
+          var hasPaste =
+            String(userPaste || "").trim() !== "" ||
+            String(userNote || "").trim() !== "";
+          syncBlockUi(block, hasPaste);
+          if (savedEl) {
+            savedEl.hidden = false;
+            setTimeout(function () {
+              savedEl.hidden = true;
+            }, 1800);
+          }
+        })
+        .catch(function () {
+          if (savedEl) {
+            savedEl.hidden = false;
+            savedEl.textContent = "Save failed — try again";
+            setTimeout(function () {
+              savedEl.hidden = true;
+              savedEl.textContent = "Saved to phase1.json";
+            }, 2200);
+          }
+        })
+        .finally(function () {
+          if (saveBtn) saveBtn.disabled = false;
+        });
+    }
+
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-url-save]");
+      if (!btn || !root.contains(btn)) return;
+      var block = btn.closest("[data-url-block]");
+      if (!block) return;
+      saveUrlPaste(block);
+    });
+  })();
 })();

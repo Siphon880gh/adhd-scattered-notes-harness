@@ -403,12 +403,14 @@ function normalize_organized_item(array $item, string $bucket): array
 /**
  * @param array<string, mixed>|null $phase1
  * @param list<string> $noteFiles
- * @return array{files: int, uncertain: int, youtube: int}
+ * @return array{files: int, uncertain: int, youtube: int, links: int, blocked: int}
  */
 function phase1_review_counts(?array $phase1, array $noteFiles): array
 {
     $uncertain = 0;
     $youtube = 0;
+    $links = 0;
+    $blocked = 0;
     if (is_array($phase1) && isset($phase1['files']) && is_array($phase1['files'])) {
         foreach ($phase1['files'] as $fileData) {
             if (!is_array($fileData)) {
@@ -435,6 +437,15 @@ function phase1_review_counts(?array $phase1, array $noteFiles): array
                 if (is_array($yt) && !empty($yt['added'])) {
                     $youtube++;
                 }
+                $link = $line['link'] ?? null;
+                if (is_array($link)) {
+                    if (!empty($link['blocked'])) {
+                        $blocked++;
+                    }
+                    if (!empty($link['added'])) {
+                        $links++;
+                    }
+                }
             }
         }
     }
@@ -443,7 +454,82 @@ function phase1_review_counts(?array $phase1, array $noteFiles): array
         'files' => count($noteFiles),
         'uncertain' => $uncertain,
         'youtube' => $youtube,
+        'links' => $links,
+        'blocked' => $blocked,
     ];
+}
+
+/**
+ * Per-file Phase 1 nav badges: attention (shorthands + blocked) vs quiet added enrichments.
+ *
+ * @param array<string, mixed>|null $phase1
+ * @param list<string> $noteFiles
+ * @return array<string, array{uncertain: int, blocked: int, attention: int, added: int}>
+ */
+function phase1_file_nav_stats(?array $phase1, array $noteFiles): array
+{
+    $out = [];
+    foreach ($noteFiles as $name) {
+        $out[$name] = [
+            'uncertain' => 0,
+            'blocked' => 0,
+            'attention' => 0,
+            'added' => 0,
+        ];
+    }
+
+    if (!is_array($phase1) || !isset($phase1['files']) || !is_array($phase1['files'])) {
+        return $out;
+    }
+
+    foreach ($phase1['files'] as $fileName => $fileData) {
+        $fileName = (string) $fileName;
+        if (!isset($out[$fileName]) || !is_array($fileData)) {
+            continue;
+        }
+        $lines = $fileData['lines'] ?? [];
+        if (!is_array($lines)) {
+            continue;
+        }
+        $uncertain = 0;
+        $blocked = 0;
+        $added = 0;
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $marks = $line['marks'] ?? [];
+            if (is_array($marks)) {
+                foreach ($marks as $mark) {
+                    if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
+                        $uncertain++;
+                        break;
+                    }
+                }
+            }
+            $yt = $line['youtube'] ?? null;
+            if (is_array($yt) && !empty($yt['added'])) {
+                $added++;
+            }
+            $link = $line['link'] ?? null;
+            if (is_array($link)) {
+                if (!empty($link['blocked'])) {
+                    $blocked++;
+                }
+                if (!empty($link['added'])) {
+                    $added++;
+                }
+            }
+        }
+        $out[$fileName] = [
+            'uncertain' => $uncertain,
+            'blocked' => $blocked,
+            'attention' => $uncertain + $blocked,
+            'added' => $added,
+        ];
+    }
+
+    return $out;
 }
 
 /**
@@ -491,6 +577,75 @@ function save_json_file(string $path, array $data): bool
         return false;
     }
     return file_put_contents($path, $json . "\n") !== false;
+}
+
+/**
+ * Write userPaste / userNote onto a blocked (or any) link line in phase1.json.
+ *
+ * @param array<string, mixed> $phase1
+ * @return array{ok: bool, error?: string, phase1?: array<string, mixed>}
+ */
+function apply_phase1_url_paste(array $phase1, string $file, int $lineN, string $userPaste, string $userNote): array
+{
+    $file = trim($file);
+    if ($file === '' || $lineN < 1) {
+        return ['ok' => false, 'error' => 'Expected file and positive line number.'];
+    }
+    if (!isset($phase1['files']) || !is_array($phase1['files'])) {
+        return ['ok' => false, 'error' => 'phase1.json has no files map.'];
+    }
+    if (!isset($phase1['files'][$file]) || !is_array($phase1['files'][$file])) {
+        return ['ok' => false, 'error' => 'Unknown file in phase1.json.'];
+    }
+    $lines = $phase1['files'][$file]['lines'] ?? null;
+    if (!is_array($lines)) {
+        return ['ok' => false, 'error' => 'File has no lines in phase1.json.'];
+    }
+
+    $found = false;
+    foreach ($lines as $idx => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        if ((int) ($line['n'] ?? 0) !== $lineN) {
+            continue;
+        }
+        $link = $line['link'] ?? null;
+        if (!is_array($link)) {
+            $link = [];
+        }
+        $link['userPaste'] = $userPaste;
+        $link['userNote'] = $userNote;
+        if (!isset($link['url']) || trim((string) $link['url']) === '') {
+            $link['url'] = trim((string) ($line['text'] ?? ''));
+        }
+        if (!isset($link['intent'])) {
+            $link['intent'] = '';
+        }
+        if (!isset($link['title'])) {
+            $link['title'] = '';
+        }
+        if (!isset($link['about'])) {
+            $link['about'] = '';
+        }
+        if (!array_key_exists('added', $link)) {
+            $link['added'] = false;
+        }
+        if (!array_key_exists('blocked', $link)) {
+            $link['blocked'] = true;
+        }
+        $line['link'] = $link;
+        $lines[$idx] = $line;
+        $found = true;
+        break;
+    }
+
+    if (!$found) {
+        return ['ok' => false, 'error' => 'Line not found in phase1.json.'];
+    }
+
+    $phase1['files'][$file]['lines'] = $lines;
+    return ['ok' => true, 'phase1' => $phase1];
 }
 
 function phase2_suggestions_path(string $dir): string

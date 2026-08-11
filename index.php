@@ -91,6 +91,76 @@ if (
     exit;
 }
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'save-url-paste'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase !== 1) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'URL pastes are only available in Phase 1.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with file, line, userPaste.']);
+        exit;
+    }
+
+    $file = isset($payload['file']) ? (string) $payload['file'] : '';
+    $lineN = isset($payload['line']) ? (int) $payload['line'] : 0;
+    $userPaste = isset($payload['userPaste']) ? (string) $payload['userPaste'] : '';
+    $userNote = isset($payload['userNote']) ? (string) $payload['userNote'] : '';
+
+    $phase1Path = $dir . '/phase1.json';
+    $existing = load_json_file($phase1Path);
+    if ($existing === null) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'phase1.json is missing.']);
+        exit;
+    }
+
+    $applied = apply_phase1_url_paste($existing, $file, $lineN, $userPaste, $userNote);
+    if (empty($applied['ok']) || !isset($applied['phase1']) || !is_array($applied['phase1'])) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => (string) ($applied['error'] ?? 'Could not apply paste.')]);
+        exit;
+    }
+
+    if (!save_json_file($phase1Path, $applied['phase1'])) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write phase1.json.']);
+        exit;
+    }
+
+    $linkOut = null;
+    $filesMap = $applied['phase1']['files'] ?? [];
+    if (is_array($filesMap) && isset($filesMap[$file]) && is_array($filesMap[$file])) {
+        $linesOut = $filesMap[$file]['lines'] ?? [];
+        if (is_array($linesOut)) {
+            foreach ($linesOut as $lineRow) {
+                if (is_array($lineRow) && (int) ($lineRow['n'] ?? 0) === $lineN) {
+                    $linkOut = is_array($lineRow['link'] ?? null) ? $lineRow['link'] : null;
+                    break;
+                }
+            }
+        }
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'file' => $file,
+        'line' => $lineN,
+        'link' => $linkOut,
+    ]);
+    exit;
+}
+
 $noteFiles = $folderExists ? list_note_files($dir) : [];
 $activeFile = isset($_GET['file']) ? (string) $_GET['file'] : '';
 if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
@@ -355,31 +425,104 @@ $showEmpty = !$folderExists;
         ['label' => 'Files', 'count' => $phase1Counts['files']],
         ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain']],
         ['label' => 'YouTube', 'count' => $phase1Counts['youtube']],
+        ['label' => 'Links', 'count' => $phase1Counts['links']],
+        ['label' => 'Blocked', 'count' => $phase1Counts['blocked']],
     ], 'Phase 1 review counts');
     ?>
     <aside class="banner banner--warn">
         <h2>Phase 1 — review marks, then return to chat</h2>
         <p>
-            Uncertain symbols and shorthand are highlighted. YouTube links show a green added descriptor.
+            Uncertain symbols and shorthand are highlighted. YouTube and fetched links show a green added descriptor.
+            Blocked URLs open a paste panel — visit the page in your browser, describe what you need, and paste relevant text.
             Reload this page after the skill updates <code>phase1.json</code>.
         </p>
         <ul>
-            <li>In Cursor / Claude Code, explain any flagged shorthand (the skill updates the app-wide <code>shorthands.md</code>).</li>
+            <li>In Cursor / Claude Code, explain any flagged shorthand when advancing to phase 2 (the skill updates the app-wide <code>shorthands.md</code>).</li>
+            <li>For blocked URLs, paste text here, then tell chat you pasted so the skill can enrich from it.</li>
             <li>Or say Phase 1 looks good and ask to start Phase 2.</li>
         </ul>
     </aside>
 
-    <div class="layout">
+    <div class="layout" data-phase1-root>
         <nav class="file-nav" aria-label="Note files">
             <h2>Files</h2>
             <?php if ($noteFiles === []): ?>
                 <p class="muted">No <code>.md</code> / <code>.txt</code> notes in this folder yet.</p>
-            <?php else: ?>
+            <?php else:
+                $fileNavStats = phase1_file_nav_stats($phase1, $noteFiles);
+                ?>
+                <div class="file-nav__cols">
+                    <span class="file-nav__col-file">Name</span>
+                    <div class="file-nav__col-help file-nav__col-help--attention" data-section-info>
+                        <button
+                            type="button"
+                            class="file-nav__col-btn file-nav__col-btn--attention"
+                            data-section-info-toggle
+                            aria-expanded="false"
+                            aria-controls="file-nav-tip-attention"
+                            title="What ! means"
+                            aria-label="What ! means"
+                        >!</button>
+                        <div class="file-nav__col-tip" id="file-nav-tip-attention" data-section-info-tip role="tooltip">
+                            <strong>Needs attention</strong>
+                            Shorthands the AI flagged, and blocked URLs that need you to open the page and paste text here.
+                        </div>
+                    </div>
+                    <div class="file-nav__col-help file-nav__col-help--added" data-section-info>
+                        <button
+                            type="button"
+                            class="file-nav__col-btn file-nav__col-btn--added"
+                            data-section-info-toggle
+                            aria-expanded="false"
+                            aria-controls="file-nav-tip-added"
+                            title="What + means"
+                            aria-label="What + means"
+                        >+</button>
+                        <div class="file-nav__col-tip" id="file-nav-tip-added" data-section-info-tip role="tooltip">
+                            <strong>Added enrichments</strong>
+                            Green “+” lines from YouTube or fetched web links. Informational — not urgent like !.
+                        </div>
+                    </div>
+                </div>
                 <ul class="file-nav__list">
-                    <?php foreach ($noteFiles as $name): ?>
+                    <?php foreach ($noteFiles as $name):
+                        $stats = $fileNavStats[$name] ?? [
+                            'uncertain' => 0,
+                            'blocked' => 0,
+                            'attention' => 0,
+                            'added' => 0,
+                        ];
+                        $attention = (int) ($stats['attention'] ?? 0);
+                        $added = (int) ($stats['added'] ?? 0);
+                        $uncertainN = (int) ($stats['uncertain'] ?? 0);
+                        $blockedN = (int) ($stats['blocked'] ?? 0);
+                        $attentionTitle = [];
+                        if ($uncertainN > 0) {
+                            $attentionTitle[] = $uncertainN . ' shorthand' . ($uncertainN === 1 ? '' : 's');
+                        }
+                        if ($blockedN > 0) {
+                            $attentionTitle[] = $blockedN . ' blocked URL' . ($blockedN === 1 ? '' : 's');
+                        }
+                        $attentionLabel = $attentionTitle !== []
+                            ? 'Needs attention: ' . implode(', ', $attentionTitle)
+                            : 'No attention items';
+                        $addedLabel = $added > 0
+                            ? $added . ' added enrichment' . ($added === 1 ? '' : 's')
+                            : 'No added enrichments';
+                        ?>
                         <li>
-                            <a href="?file=<?= e(rawurlencode($name)) ?>" class="<?= $name === $activeFile ? 'is-active' : '' ?>">
-                                <?= e($name) ?>
+                            <a href="?file=<?= e(rawurlencode($name)) ?>" class="file-nav__row<?= $name === $activeFile ? ' is-active' : '' ?><?= $attention > 0 ? ' has-attention' : '' ?>">
+                                <span class="file-nav__name"><?= e($name) ?></span>
+                                <span
+                                    class="file-nav__badge file-nav__badge--attention<?= $attention > 0 ? ' is-on' : '' ?>"
+                                    title="<?= e($attentionLabel) ?>"
+                                    aria-label="<?= e($attentionLabel) ?>"
+                                ><?= $attention > 0 ? (int) $attention : '' ?></span>
+                                <span
+                                    class="file-nav__badge file-nav__badge--added<?= $added > 0 ? ' is-on' : '' ?>"
+                                    title="<?= e($addedLabel) ?>"
+                                    aria-label="<?= e($addedLabel) ?>"
+                                ><?= $added > 0 ? (int) $added : '' ?></span>
                             </a>
                         </li>
                     <?php endforeach; ?>
@@ -412,6 +555,7 @@ $showEmpty = !$folderExists;
                             $marks = [];
                         }
                         $youtube = $line['youtube'] ?? null;
+                        $link = $line['link'] ?? null;
                         $hasUncertain = false;
                         foreach ($marks as $mark) {
                             if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
@@ -430,6 +574,20 @@ $showEmpty = !$folderExists;
                             <div class="line line--added">
                                 <div class="line__n">+</div>
                                 <div class="line__body"><?= e($addedText) ?></div>
+                            </div>
+                        <?php endif; ?>
+                        <?php
+                        if (is_array($link) && !empty($link['added'])):
+                            $linkTitle = (string) ($link['title'] ?? 'Link');
+                            $linkAbout = (string) ($link['about'] ?? '');
+                            $linkAddedText = '+ ' . $linkTitle;
+                            if ($linkAbout !== '') {
+                                $linkAddedText .= ' — ' . $linkAbout;
+                            }
+                            ?>
+                            <div class="line line--added">
+                                <div class="line__n">+</div>
+                                <div class="line__body"><?= e($linkAddedText) ?></div>
                             </div>
                         <?php endif; ?>
                         <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?>">
@@ -451,6 +609,55 @@ $showEmpty = !$folderExists;
                                 <?php endforeach; ?>
                             </div>
                         </div>
+                        <?php
+                        if (is_array($link) && !empty($link['blocked'])):
+                            $linkUrl = (string) ($link['url'] ?? $text);
+                            $linkIntent = (string) ($link['intent'] ?? '');
+                            $userPaste = (string) ($link['userPaste'] ?? '');
+                            $userNote = (string) ($link['userNote'] ?? '');
+                            $hasPaste = trim($userPaste) !== '' || trim($userNote) !== '';
+                            ?>
+                            <div
+                                class="url-block<?= $hasPaste ? ' has-paste' : '' ?>"
+                                data-url-block
+                                data-url-file="<?= e($activeFile) ?>"
+                                data-url-line="<?= (int) $n ?>"
+                            >
+                                <div class="url-block__header">
+                                    <strong>Blocked URL — paste from your browser</strong>
+                                    <span class="url-block__status" data-url-status><?= $hasPaste ? 'Saved — return to chat' : 'Needs paste' ?></span>
+                                </div>
+                                <p class="url-block__hint">
+                                    This page could not be opened from here. Open the link in your browser, then describe what you need and paste the relevant text.
+                                </p>
+                                <p class="url-block__url">
+                                    <a href="<?= e($linkUrl) ?>" target="_blank" rel="noopener noreferrer"><?= e($linkUrl) ?></a>
+                                </p>
+                                <?php if ($linkIntent !== ''): ?>
+                                    <p class="url-block__intent"><span>Looking for:</span> <?= e($linkIntent) ?></p>
+                                <?php endif; ?>
+                                <label class="url-block__label" for="url-note-<?= e($activeFile) ?>-<?= (int) $n ?>">Your note (optional)</label>
+                                <textarea
+                                    id="url-note-<?= e($activeFile) ?>-<?= (int) $n ?>"
+                                    class="url-block__input"
+                                    data-url-note
+                                    rows="2"
+                                    placeholder="e.g. need the bubble vs merge complexity table"
+                                ><?= e($userNote) ?></textarea>
+                                <label class="url-block__label" for="url-paste-<?= e($activeFile) ?>-<?= (int) $n ?>">Paste relevant text from the page</label>
+                                <textarea
+                                    id="url-paste-<?= e($activeFile) ?>-<?= (int) $n ?>"
+                                    class="url-block__input url-block__input--paste"
+                                    data-url-paste
+                                    rows="6"
+                                    placeholder="Paste title, sections, or quotes from your browser…"
+                                ><?= e($userPaste) ?></textarea>
+                                <div class="url-block__footer">
+                                    <button type="button" class="url-block__save" data-url-save>Save paste</button>
+                                    <span class="url-block__saved muted" data-url-saved hidden>Saved to phase1.json</span>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
