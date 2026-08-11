@@ -352,6 +352,63 @@ function normalize_filter_layout($layout, array $availableTags): array
 }
 
 /**
+ * Per-notebook (tag) note id order for Notebook mode.
+ *
+ * @param mixed $order
+ * @param array{tasks: list<array<string, mixed>>, reference: list<array<string, mixed>>, articleCandidates: list<array<string, mixed>>} $organized
+ * @return array<string, list<string>>
+ */
+function normalize_notebook_order($order, array $organized): array
+{
+    $validIds = [];
+    foreach (['tasks', 'reference', 'articleCandidates'] as $bucket) {
+        $items = $organized[$bucket] ?? [];
+        if (!is_array($items)) {
+            continue;
+        }
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $id = trim((string) ($item['id'] ?? ''));
+            if ($id !== '') {
+                $validIds[$id] = true;
+            }
+        }
+    }
+
+    $out = [];
+    if (!is_array($order)) {
+        return $out;
+    }
+
+    foreach ($order as $tagKey => $ids) {
+        if (!is_string($tagKey) && !is_int($tagKey)) {
+            continue;
+        }
+        $tag = trim((string) $tagKey);
+        if ($tag === '' || !is_array($ids)) {
+            continue;
+        }
+        $clean = [];
+        $seen = [];
+        foreach ($ids as $idRaw) {
+            $id = trim((string) $idRaw);
+            if ($id === '' || !isset($validIds[$id]) || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $clean[] = $id;
+        }
+        if ($clean !== []) {
+            $out[$tag] = $clean;
+        }
+    }
+
+    return $out;
+}
+
+/**
  * @param array<string, mixed> $item
  * @return array<string, mixed>
  */

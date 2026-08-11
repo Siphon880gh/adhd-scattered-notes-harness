@@ -42,6 +42,14 @@ if (
         $existing['filterLayout'] = normalize_filter_layout($existing['filterLayout'], $availableTags);
     }
 
+    if (array_key_exists('notebookOrder', $payload)) {
+        $existing['notebookOrder'] = normalize_notebook_order($payload['notebookOrder'], $existing['organized']);
+    } elseif (!isset($existing['notebookOrder']) || !is_array($existing['notebookOrder'])) {
+        $existing['notebookOrder'] = [];
+    } else {
+        $existing['notebookOrder'] = normalize_notebook_order($existing['notebookOrder'], $existing['organized']);
+    }
+
     if (!save_json_file($phase2Path, $existing)) {
         http_response_code(500);
         echo json_encode(['ok' => false, 'error' => 'Could not write phase2.json.']);
@@ -52,6 +60,7 @@ if (
         'ok' => true,
         'organized' => $existing['organized'],
         'filterLayout' => $existing['filterLayout'],
+        'notebookOrder' => $existing['notebookOrder'],
     ]);
     exit;
 }
@@ -404,7 +413,7 @@ $showEmpty = !$folderExists;
             inputs/<?= e($folder) ?> · phase <?= (int) $phase ?>
         <?php endif; ?>
     </div>
-    <?php if (!$showEmpty && $phase === 2): ?>
+    <?php if (!$showEmpty && ($phase === 2 || $phase === 3)): ?>
         <button type="button"
                 class="app-header__menu"
                 data-drawer-open
@@ -822,11 +831,11 @@ $showEmpty = !$folderExists;
         <h2>Phase 3 — locked in</h2>
         <p>
             Review is finished: no Suggest notes and no green-check marking in this phase.
-            Filter by tag, then <strong>Copy</strong> cards (or a whole panel) into your permanent notes app.
+            Use <strong>Panels</strong> to filter by tag and Copy, or switch to <strong>Notebook</strong> for an UpNote-style sidebar of filter groups → notebooks.
             You can still tweak tags, move items, and rearrange. Use the hamburger for original notes with per-line accounting.
         </p>
         <ul>
-            <li>Filter + Copy is the main exit path — paste into your own notes app.</li>
+            <li>Filter + Copy (Panels) or open a notebook and Copy compiled notes — paste into your own notes app.</li>
             <li>Tag/move edits still save into <code>phase2.json</code>. Return to chat only to refine tags if needed.</li>
         </ul>
     </aside>
@@ -834,7 +843,12 @@ $showEmpty = !$folderExists;
     <aside class="banner">
         <h2>Phase 2 — organized notes</h2>
         <p>
-            Review whether the AI parsed your notes correctly: that it did not drop lines unnecessarily, and that each card reads the way you meant.
+            Review whether the AI classified each note correctly as a task or not:
+            open <strong>Suggest</strong> and write e.g. “not a task — make this Reference” or “this should be a task”.
+            You can also move the card between Scattered / Reference / Articles yourself.
+        </p>
+        <p>
+            Also check that it did not drop lines unnecessarily, and that each card reads the way you meant.
             Want a note changed (different title, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on a section header for whole-panel feedback (tagging, heading style, ordering) — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
             Green-check items as you review them (saved into <code>phase2.json</code>).
             Move items between panels, or add tags on the right (filter chips appear at the top).
@@ -848,7 +862,7 @@ $showEmpty = !$folderExists;
             at the top right.
         </p>
         <ul>
-            <li>Use <strong>Suggest</strong> when a note should be rewritten or reorganized; return to chat so the AI can apply it.</li>
+            <li>Use <strong>Suggest</strong> when a note should be rewritten or reorganized (including task vs not-a-task); return to chat so the AI can apply it.</li>
             <li>Panel moves/tags save into <code>phase2.json</code>; Suggest notes save into <code>phase2-suggestions.md</code>.</li>
         </ul>
     </aside>
@@ -865,7 +879,68 @@ $showEmpty = !$folderExists;
                 is_array($phase2['filterLayout'] ?? null) ? $phase2['filterLayout'] : [],
                 $allTags
             );
+            $notebookOrder = [];
+            if (isset($phase2['notebookOrder']) && is_array($phase2['notebookOrder'])) {
+                foreach ($phase2['notebookOrder'] as $nbKey => $nbIds) {
+                    if (!is_string($nbKey) || $nbKey === '' || !is_array($nbIds)) {
+                        continue;
+                    }
+                    $cleanIds = [];
+                    foreach ($nbIds as $nbId) {
+                        $idStr = trim((string) $nbId);
+                        if ($idStr !== '' && !in_array($idStr, $cleanIds, true)) {
+                            $cleanIds[] = $idStr;
+                        }
+                    }
+                    $notebookOrder[$nbKey] = $cleanIds;
+                }
+            }
             ?>
+            <?php if ($phase === 3): ?>
+                <div class="view-mode-bar" data-view-mode-bar>
+                    <span class="view-mode__label">Mode</span>
+                    <div class="view-mode" data-view-mode role="tablist" aria-label="Phase 3 view">
+                        <button type="button"
+                                class="view-mode__btn is-active"
+                                data-view-mode-btn="panels"
+                                role="tab"
+                                aria-selected="true">
+                            Panels
+                        </button>
+                        <button type="button"
+                                class="view-mode__btn"
+                                data-view-mode-btn="notebook"
+                                role="tab"
+                                aria-selected="false">
+                            Notebook
+                        </button>
+                    </div>
+                </div>
+            <?php endif; ?>
+            <div class="kind-filter" data-kind-filter role="group" aria-label="Filter by task notes">
+                <span class="kind-filter__label">Show</span>
+                <button type="button"
+                        class="kind-filter__chip is-active"
+                        data-kind-filter-btn=""
+                        aria-pressed="true">
+                    All
+                </button>
+                <button type="button"
+                        class="kind-filter__chip"
+                        data-kind-filter-btn="task"
+                        aria-pressed="false"
+                        title="Titles that start with Task: ">
+                    Tasks
+                </button>
+                <button type="button"
+                        class="kind-filter__chip"
+                        data-kind-filter-btn="not-task"
+                        aria-pressed="false"
+                        title="Titles that do not start with Task: ">
+                    Not tasks
+                </button>
+            </div>
+            <div class="panels-view" data-panels-view>
             <div class="tag-filter" data-tag-filter <?= $allTags === [] ? 'hidden' : '' ?>>
                 <span class="tag-filter__label">Filter</span>
                 <button type="button" class="tag-filter__chip is-active" data-filter-tag="" aria-pressed="true">All</button>
@@ -951,6 +1026,16 @@ $showEmpty = !$folderExists;
                     '</',
                     '<\/',
                     (string) json_encode($filterLayout, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                )
+            ?></script>
+            <script type="application/json" id="phase2-notebook-order-data"><?=
+                str_replace(
+                    '</',
+                    '<\/',
+                    (string) json_encode(
+                        $notebookOrder === [] ? new stdClass() : $notebookOrder,
+                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                    )
                 )
             ?></script>
             <script type="application/json" id="phase2-suggestions-data"><?=
@@ -1075,6 +1160,53 @@ $showEmpty = !$folderExists;
                     </div>
                 </section>
             <?php endforeach; ?>
+            </div><!-- /.panels-view -->
+            <?php if ($phase === 3): ?>
+                <div class="notebook" data-notebook-view hidden>
+                    <aside class="notebook__sidebar" aria-label="Notebook folders">
+                        <div class="notebook__sidebar-head">Notebooks</div>
+                        <div class="notebook__folders" data-notebook-folders></div>
+                    </aside>
+                    <div class="notebook__main">
+                        <div class="notebook__empty" data-notebook-empty>
+                            <p>Select a notebook in the sidebar to see its notes compiled here.</p>
+                        </div>
+                        <div class="notebook__workspace" data-notebook-workspace hidden>
+                            <header class="notebook__toolbar">
+                                <div class="notebook__toolbar-text">
+                                    <p class="notebook__crumb" data-notebook-crumb></p>
+                                    <h1 class="notebook__title" data-notebook-title></h1>
+                                </div>
+                                <div class="notebook__toolbar-actions" data-notebook-toolbar-actions>
+                                    <button type="button"
+                                            class="notebook__rearrange"
+                                            data-notebook-rearrange
+                                            aria-pressed="false"
+                                            title="Rearrange notes"
+                                            aria-label="Rearrange notes in this notebook">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                            <path d="M8 9l-3 3 3 3M16 9l3 3-3 3M5 12h14"/>
+                                        </svg>
+                                        <span class="notebook__action-label">Rearrange</span>
+                                    </button>
+                                    <button type="button"
+                                            class="notebook__copy"
+                                            data-notebook-copy
+                                            title="Copy all notes in this notebook"
+                                            aria-label="Copy all notes in this notebook">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                            <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                        </svg>
+                                        <span class="notebook__action-label">Copy</span>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="notebook__notes" data-notebook-notes></div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
         <?php endif; ?>
     </main>
 
@@ -1212,6 +1344,8 @@ $showEmpty = !$folderExists;
         </div>
     </details>
 </footer>
+
+<div class="app-toast" data-app-toast hidden role="status" aria-live="polite"></div>
 
 <script src="<?= e(asset_url('assets/app.js')) ?>"></script>
 </body>

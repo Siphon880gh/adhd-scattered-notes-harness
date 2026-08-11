@@ -519,10 +519,12 @@
   };
   var BUCKET_KEYS = ["tasks", "reference", "articleCandidates"];
   var activeFilterTag = "";
+  var activeKindFilter = ""; // "" | "task" | "not-task"
   var saveTimer = null;
   var suggestionsSaveTimer = null;
   var organizedState = null;
   var filterLayoutState = [];
+  var notebookOrderState = {};
   var PANEL_SUGGEST_KEYS = ["tasks", "reference", "articleCandidates"];
   var suggestionsState = {
     panel: { tasks: "", reference: "", articleCandidates: "" },
@@ -617,6 +619,7 @@
       body: JSON.stringify({
         organized: organizedState,
         filterLayout: filterLayoutState,
+        notebookOrder: notebookOrderState,
       }),
     }).catch(function () {
       // local save failure — UI state still updated
@@ -734,6 +737,661 @@
       });
     });
     return tags;
+  }
+
+  // --- Phase 3 Notebook mode ---
+  var notebookView = qs("[data-notebook-view]", phase2Root);
+  var panelsView = qs("[data-panels-view]", phase2Root);
+  var notebookFoldersEl = qs("[data-notebook-folders]", phase2Root);
+  var notebookEmptyEl = qs("[data-notebook-empty]", phase2Root);
+  var notebookWorkspaceEl = qs("[data-notebook-workspace]", phase2Root);
+  var notebookNotesEl = qs("[data-notebook-notes]", phase2Root);
+  var notebookTitleEl = qs("[data-notebook-title]", phase2Root);
+  var notebookCrumbEl = qs("[data-notebook-crumb]", phase2Root);
+  var notebookRearrangeBtn = qs("[data-notebook-rearrange]", phase2Root);
+  var notebookCopyBtn = qs("[data-notebook-copy]", phase2Root);
+  var notebookToolbarActions = qs("[data-notebook-toolbar-actions]", phase2Root);
+
+  function setNotebookActionExpanded(activeBtn) {
+    [notebookRearrangeBtn, notebookCopyBtn].forEach(function (btn) {
+      if (!btn) return;
+      btn.classList.toggle("is-expanded", btn === activeBtn);
+    });
+  }
+
+  function clearNotebookActionExpandedIfIdle() {
+    if (!notebookToolbarActions) {
+      setNotebookActionExpanded(null);
+      return;
+    }
+    if (notebookToolbarActions.contains(document.activeElement)) {
+      setNotebookActionExpanded(document.activeElement.closest(
+        "[data-notebook-rearrange], [data-notebook-copy]"
+      ));
+      return;
+    }
+    setNotebookActionExpanded(null);
+  }
+
+  if (notebookToolbarActions) {
+    [notebookRearrangeBtn, notebookCopyBtn].forEach(function (btn) {
+      if (!btn) return;
+      btn.addEventListener("pointerenter", function () {
+        setNotebookActionExpanded(btn);
+      });
+      btn.addEventListener("focusin", function () {
+        setNotebookActionExpanded(btn);
+      });
+    });
+    notebookToolbarActions.addEventListener("pointerleave", function () {
+      clearNotebookActionExpandedIfIdle();
+    });
+    notebookToolbarActions.addEventListener("focusout", function () {
+      setTimeout(clearNotebookActionExpandedIfIdle, 0);
+    });
+  }
+  var viewMode = "panels";
+  var activeNotebookTag = "";
+  var activeNotebookFolderLabel = "";
+  var notebookCollapsedIds = {};
+  var notebookDrag = {
+    note: null,
+    didReorder: false,
+  };
+
+  function notebookFolderLabel(heading, untitledIndex) {
+    var name = String(heading || "").trim();
+    if (name) return { text: name, untitled: false };
+    return { text: "Untitled #" + untitledIndex, untitled: true };
+  }
+
+  function isTaskTitle(title) {
+    return String(title || "").trim().indexOf("Task: ") === 0;
+  }
+
+  function itemMatchesKind(item) {
+    if (!activeKindFilter) return true;
+    var isTask = isTaskTitle(item && item.title);
+    if (activeKindFilter === "task") return isTask;
+    if (activeKindFilter === "not-task") return !isTask;
+    return true;
+  }
+
+  function cardMatchesKind(card) {
+    if (!activeKindFilter) return true;
+    var titleEl = qs("h3", card);
+    return itemMatchesKind({ title: titleEl ? titleEl.textContent : "" });
+  }
+
+  function syncKindFilterUi() {
+    qsa("[data-kind-filter-btn]", phase2Root).forEach(function (btn) {
+      var value = btn.getAttribute("data-kind-filter-btn") || "";
+      var on = value === activeKindFilter;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function setKindFilter(value) {
+    var next = value === "task" || value === "not-task" ? value : "";
+    if (activeKindFilter === next) return;
+    activeKindFilter = next;
+    syncKindFilterUi();
+    applyFilter();
+    if (viewMode === "notebook") {
+      syncNotebookNavAvailability();
+      if (activeNotebookTag) {
+        if (
+          activeKindFilter &&
+          itemsForNotebookTag(activeNotebookTag).length === 0
+        ) {
+          clearNotebookSelection();
+        } else {
+          openNotebook(activeNotebookTag, activeNotebookFolderLabel);
+        }
+      }
+    }
+  }
+
+  function clearNotebookSelection() {
+    activeNotebookTag = "";
+    activeNotebookFolderLabel = "";
+    setNotebookRearrangeMode(false);
+    if (notebookFoldersEl) {
+      qsa(".notebook-nav", notebookFoldersEl).forEach(function (btn) {
+        btn.classList.remove("is-active");
+      });
+    }
+    if (notebookEmptyEl) notebookEmptyEl.hidden = false;
+    if (notebookWorkspaceEl) notebookWorkspaceEl.hidden = true;
+    if (notebookNotesEl) notebookNotesEl.innerHTML = "";
+  }
+
+  function notebookEmptyUnderKindFilter(tagName) {
+    return !!activeKindFilter && itemsForNotebookTag(tagName).length === 0;
+  }
+
+  function syncNotebookNavAvailability() {
+    if (!notebookFoldersEl) return;
+    qsa(".notebook-nav[data-notebook-tag]", notebookFoldersEl).forEach(function (btn) {
+      var tag = btn.getAttribute("data-notebook-tag") || "";
+      var disabled = notebookEmptyUnderKindFilter(tag);
+      btn.classList.toggle("is-disabled", disabled);
+      btn.setAttribute("aria-disabled", disabled ? "true" : "false");
+      if (disabled) {
+        btn.setAttribute(
+          "title",
+          activeKindFilter === "task"
+            ? "No task notes in this notebook"
+            : "No non-task notes in this notebook"
+        );
+      } else {
+        btn.removeAttribute("title");
+      }
+    });
+  }
+
+  var appToastTimer = null;
+
+  function showAppToast(message) {
+    var toast = qs("[data-app-toast]");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.className = "app-toast";
+      toast.setAttribute("data-app-toast", "");
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.hidden = false;
+    toast.classList.add("is-visible");
+    if (appToastTimer) clearTimeout(appToastTimer);
+    appToastTimer = setTimeout(function () {
+      toast.classList.remove("is-visible");
+      appToastTimer = setTimeout(function () {
+        toast.hidden = true;
+      }, 220);
+    }, 2800);
+  }
+
+  function showNotebookKindEmptyToast(tagName) {
+    var label = tagName ? '"' + tagName + '"' : "this notebook";
+    if (activeKindFilter === "task") {
+      showAppToast("There's no task notes in " + label + ".");
+      return;
+    }
+    if (activeKindFilter === "not-task") {
+      showAppToast("There's no non-task notes in " + label + ".");
+      return;
+    }
+    showAppToast("There's no notes in " + label + ".");
+  }
+
+  function countItemsForTag(tagName) {
+    var key = String(tagName || "").toLowerCase();
+    if (!key || !organizedState) return 0;
+    var n = 0;
+    BUCKET_KEYS.forEach(function (bucket) {
+      (organizedState[bucket] || []).forEach(function (item) {
+        var match = normalizeTagList(item.tags).some(function (tag) {
+          return tag.toLowerCase() === key;
+        });
+        if (match) n += 1;
+      });
+    });
+    return n;
+  }
+
+  function itemsForNotebookTag(tagName) {
+    var key = String(tagName || "").toLowerCase();
+    var rows = [];
+    if (!key || !organizedState) return rows;
+    BUCKET_KEYS.forEach(function (bucket) {
+      (organizedState[bucket] || []).forEach(function (item) {
+        var match = normalizeTagList(item.tags).some(function (tag) {
+          return tag.toLowerCase() === key;
+        });
+        if (!match) return;
+        if (!itemMatchesKind(item)) return;
+        rows.push({
+          bucket: bucket,
+          item: item,
+        });
+      });
+    });
+
+    var order = notebookOrderState[tagName] || [];
+    if (!order.length) {
+      var foldKey = Object.keys(notebookOrderState).find(function (k) {
+        return String(k).toLowerCase() === key;
+      });
+      if (foldKey) order = notebookOrderState[foldKey] || [];
+    }
+    if (!order.length) return rows;
+
+    var byId = {};
+    rows.forEach(function (row) {
+      byId[row.item.id] = row;
+    });
+    var sorted = [];
+    var used = {};
+    order.forEach(function (id) {
+      if (!byId[id] || used[id]) return;
+      used[id] = true;
+      sorted.push(byId[id]);
+    });
+    rows.forEach(function (row) {
+      if (used[row.item.id]) return;
+      sorted.push(row);
+    });
+    return sorted;
+  }
+
+  function itemBodyText(item) {
+    if (!item) return "";
+    if (item.body != null && String(item.body) !== "") return String(item.body);
+    if (item.why != null) return String(item.why);
+    return "";
+  }
+
+  function setNotebookRearrangeMode(on) {
+    if (!notebookView || !notebookNotesEl) return;
+    notebookView.classList.toggle("is-rearranging", !!on);
+    if (notebookRearrangeBtn) {
+      notebookRearrangeBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    qsa(".notebook-note[data-org-id]", notebookNotesEl).forEach(function (note) {
+      note.draggable = !!on;
+      note.classList.toggle("is-draggable", !!on);
+      if (!on) {
+        note.classList.remove("is-dragging", "is-drop-target");
+      }
+    });
+    if (!on) {
+      notebookDrag.note = null;
+      notebookDrag.didReorder = false;
+    }
+  }
+
+  function finishNotebookRearrange(settleNote) {
+    if (!notebookView || !notebookView.classList.contains("is-rearranging")) {
+      setNotebookRearrangeMode(false);
+      return;
+    }
+    if (activeNotebookTag && notebookNotesEl) {
+      var ids = [];
+      qsa(".notebook-note[data-org-id]", notebookNotesEl).forEach(function (note) {
+        var id = note.getAttribute("data-org-id");
+        if (id) ids.push(id);
+      });
+      notebookOrderState[activeNotebookTag] = ids;
+      scheduleSave();
+    }
+    setNotebookRearrangeMode(false);
+    if (settleNote) {
+      settleNote.classList.remove("is-dragging", "is-drop-target");
+      settleNote.classList.add("is-settling");
+      settleNote.addEventListener(
+        "animationend",
+        function () {
+          settleNote.classList.remove("is-settling");
+        },
+        { once: true }
+      );
+    }
+  }
+
+  function getNotebookDragAfterElement(y) {
+    var notes = qsa(
+      ".notebook-note[data-org-id]:not(.is-dragging)",
+      notebookNotesEl
+    );
+    var closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    notes.forEach(function (child) {
+      var box = child.getBoundingClientRect();
+      var offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        closest = { offset: offset, element: child };
+      }
+    });
+    return closest.element;
+  }
+
+  function clearNotebookDropTargets() {
+    if (!notebookNotesEl) return;
+    qsa(".notebook-note", notebookNotesEl).forEach(function (note) {
+      note.classList.remove("is-drop-target");
+    });
+  }
+
+  function setNotebookNoteCollapsed(note, collapsed) {
+    if (!note) return;
+    var id = note.getAttribute("data-org-id") || "";
+    note.classList.toggle("is-collapsed", collapsed);
+    var toggle = qs("[data-notebook-note-collapse]", note);
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+    if (id) {
+      if (collapsed) notebookCollapsedIds[id] = true;
+      else delete notebookCollapsedIds[id];
+    }
+  }
+
+  function renderNotebookNote(row) {
+    var item = row.item;
+    var bucket = row.bucket;
+    var id = item.id || "";
+    var title = item.title || id || "Untitled";
+    var body = itemBodyText(item);
+    var sources = Array.isArray(item.sources) ? item.sources : [];
+    var collapsed = !!(id && notebookCollapsedIds[id]);
+
+    var note = document.createElement("article");
+    note.className = "notebook-note" + (collapsed ? " is-collapsed" : "");
+    note.setAttribute("data-org-id", id);
+    note.setAttribute("data-bucket", bucket);
+    note.setAttribute("data-full-text", body);
+
+    var header = document.createElement("div");
+    header.className = "notebook-note__header";
+
+    var collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.className = "notebook-note__collapse";
+    collapseBtn.setAttribute("data-notebook-note-collapse", "");
+    collapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    collapseBtn.setAttribute("title", collapsed ? "Expand note" : "Collapse note");
+    collapseBtn.setAttribute("aria-label", collapsed ? "Expand note" : "Collapse note");
+    collapseBtn.innerHTML = '<span class="notebook-note__chevron" aria-hidden="true"></span>';
+
+    var heading = document.createElement("h3");
+    heading.className = "notebook-note__title";
+    heading.textContent = title;
+
+    var copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "notebook-note__copy";
+    copyBtn.setAttribute("data-notebook-note-copy", "");
+    copyBtn.setAttribute("title", "Copy note");
+    copyBtn.setAttribute("aria-label", "Copy note");
+    copyBtn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
+
+    header.appendChild(collapseBtn);
+    header.appendChild(heading);
+    header.appendChild(copyBtn);
+
+    var bodyEl = document.createElement("div");
+    bodyEl.className = "notebook-note__body";
+    bodyEl.textContent = body || "";
+
+    var meta = document.createElement("div");
+    meta.className = "notebook-note__meta";
+    var bits = [BUCKET_LABELS[bucket] || bucket];
+    if (sources.length) bits.push(sources.join(", "));
+    meta.textContent = bits.join(" · ");
+
+    note.appendChild(header);
+    note.appendChild(bodyEl);
+    note.appendChild(meta);
+    return note;
+  }
+
+  function openNotebook(tagName, folderLabel) {
+    if (!notebookView || !notebookNotesEl) return;
+    activeNotebookTag = tagName;
+    activeNotebookFolderLabel = folderLabel || "";
+    setNotebookRearrangeMode(false);
+
+    if (notebookEmptyEl) notebookEmptyEl.hidden = true;
+    if (notebookWorkspaceEl) notebookWorkspaceEl.hidden = false;
+    if (notebookTitleEl) notebookTitleEl.textContent = tagName;
+    if (notebookCrumbEl) {
+      notebookCrumbEl.textContent = activeNotebookFolderLabel
+        ? activeNotebookFolderLabel + " /"
+        : "";
+    }
+
+    qsa(".notebook-nav", notebookFoldersEl).forEach(function (btn) {
+      var active =
+        String(btn.getAttribute("data-notebook-tag") || "").toLowerCase() ===
+        String(tagName).toLowerCase();
+      btn.classList.toggle("is-active", active);
+    });
+
+    notebookNotesEl.innerHTML = "";
+    var rows = itemsForNotebookTag(tagName);
+    if (!rows.length) {
+      var empty = document.createElement("p");
+      empty.className = "notebook__notes-empty";
+      if (activeKindFilter === "task") {
+        empty.textContent = "No task notes in this notebook.";
+      } else if (activeKindFilter === "not-task") {
+        empty.textContent = "No non-task notes in this notebook.";
+      } else {
+        empty.textContent = "No notes tagged with this notebook yet.";
+      }
+      notebookNotesEl.appendChild(empty);
+      return;
+    }
+    rows.forEach(function (row) {
+      notebookNotesEl.appendChild(renderNotebookNote(row));
+    });
+  }
+
+  function rebuildNotebookSidebar() {
+    if (!notebookFoldersEl || !reviewLocked) return;
+    syncFilterLayout();
+    var available = collectAllTags();
+    var availableMap = {};
+    available.forEach(function (tag) {
+      availableMap[tag.toLowerCase()] = tag;
+    });
+    var parsed = parseFilterGroups(filterLayoutState, availableMap);
+    var groups = parsed.groups.slice();
+    var used = parsed.used;
+    var missing = [];
+    available.forEach(function (tag) {
+      if (!used[tag.toLowerCase()]) missing.push(tag);
+    });
+    if (missing.length) {
+      if (!groups.length) {
+        groups.push({ heading: "", tags: missing.slice() });
+      } else {
+        groups[groups.length - 1].tags = groups[groups.length - 1].tags.concat(missing);
+      }
+    }
+
+    var prevActive = activeNotebookTag;
+    var openFolders = {};
+    qsa(".notebook-folder", notebookFoldersEl).forEach(function (folder, idx) {
+      if (!folder.classList.contains("is-collapsed")) {
+        openFolders[idx] = true;
+      }
+    });
+    var hadFolders = qsa(".notebook-folder", notebookFoldersEl).length > 0;
+
+    notebookFoldersEl.innerHTML = "";
+    var untitledN = 0;
+    groups.forEach(function (group, gIndex) {
+      if (!group.tags || !group.tags.length) return;
+      var named = String(group.heading || "").trim();
+      if (!named) untitledN += 1;
+      var labelInfo = notebookFolderLabel(named, untitledN);
+
+      var folder = document.createElement("div");
+      folder.className = "notebook-folder";
+      folder.setAttribute("data-notebook-folder", String(gIndex));
+      folder.setAttribute("data-notebook-folder-heading", named);
+      if (hadFolders && !openFolders[gIndex]) {
+        folder.classList.add("is-collapsed");
+      }
+
+      var head = document.createElement("div");
+      head.className = "notebook-folder__head";
+      head.setAttribute("data-notebook-folder-toggle", "");
+      head.setAttribute(
+        "title",
+        folder.classList.contains("is-collapsed") ? "Expand folder" : "Collapse folder"
+      );
+
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "notebook-folder__toggle";
+      toggle.setAttribute("data-notebook-folder-toggle", "");
+      toggle.setAttribute("tabindex", "-1");
+      toggle.setAttribute(
+        "aria-expanded",
+        folder.classList.contains("is-collapsed") ? "false" : "true"
+      );
+      toggle.setAttribute(
+        "aria-label",
+        (folder.classList.contains("is-collapsed") ? "Expand " : "Collapse ") + labelInfo.text
+      );
+      toggle.innerHTML =
+        '<span class="notebook-folder__chevron" aria-hidden="true">▾</span>';
+
+      var nameEl = document.createElement("span");
+      nameEl.className = "notebook-folder__name";
+      nameEl.setAttribute("data-notebook-folder-rename", "");
+      nameEl.setAttribute("role", "button");
+      nameEl.setAttribute("tabindex", "0");
+      nameEl.setAttribute(
+        "title",
+        named ? "Click to rename" : "Click to name this folder"
+      );
+      nameEl.setAttribute(
+        "aria-label",
+        named ? "Rename folder " + named : "Name folder " + labelInfo.text
+      );
+      nameEl.textContent = labelInfo.text;
+
+      head.appendChild(toggle);
+      head.appendChild(nameEl);
+
+      var list = document.createElement("ul");
+      list.className = "notebook-folder__list";
+
+      group.tags.forEach(function (tag) {
+        var li = document.createElement("li");
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "notebook-nav";
+        btn.setAttribute("data-notebook-tag", tag);
+        btn.setAttribute("data-notebook-folder-label", labelInfo.text);
+        btn.innerHTML =
+          '<svg class="notebook-nav__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' +
+          '<span class="notebook-nav__label"></span>' +
+          '<span class="notebook-nav__count"></span>';
+        qs(".notebook-nav__label", btn).textContent = tag;
+        qs(".notebook-nav__count", btn).textContent = String(countItemsForTag(tag));
+        if (notebookEmptyUnderKindFilter(tag)) {
+          btn.classList.add("is-disabled");
+          btn.setAttribute("aria-disabled", "true");
+          btn.setAttribute(
+            "title",
+            activeKindFilter === "task"
+              ? "No task notes in this notebook"
+              : "No non-task notes in this notebook"
+          );
+        } else {
+          btn.setAttribute("aria-disabled", "false");
+        }
+        if (
+          prevActive &&
+          String(prevActive).toLowerCase() === String(tag).toLowerCase()
+        ) {
+          btn.classList.add("is-active");
+        }
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+
+      folder.appendChild(head);
+      folder.appendChild(list);
+      notebookFoldersEl.appendChild(folder);
+    });
+
+    if (!groups.length) {
+      var empty = document.createElement("p");
+      empty.className = "muted";
+      empty.style.padding = "0.5rem 0.65rem";
+      empty.textContent = "No tags yet — add tags in Panels view.";
+      notebookFoldersEl.appendChild(empty);
+    }
+
+    if (prevActive && viewMode === "notebook") {
+      var stillExists = false;
+      var activeBtn = null;
+      qsa(".notebook-nav", notebookFoldersEl).forEach(function (btn) {
+        if (
+          String(btn.getAttribute("data-notebook-tag") || "").toLowerCase() ===
+          String(prevActive).toLowerCase()
+        ) {
+          stillExists = true;
+          activeBtn = btn;
+        }
+      });
+      if (
+        stillExists &&
+        !(activeBtn && activeBtn.classList.contains("is-disabled"))
+      ) {
+        openNotebook(
+          prevActive,
+          activeBtn
+            ? activeBtn.getAttribute("data-notebook-folder-label") || ""
+            : activeNotebookFolderLabel
+        );
+      } else {
+        clearNotebookSelection();
+      }
+    }
+  }
+
+  function setViewMode(mode) {
+    if (!reviewLocked || !notebookView || !panelsView) return;
+    viewMode = mode === "notebook" ? "notebook" : "panels";
+    var isNotebook = viewMode === "notebook";
+    phase2Root.classList.toggle("is-notebook-mode", isNotebook);
+    panelsView.hidden = isNotebook;
+    notebookView.hidden = !isNotebook;
+
+    qsa("[data-view-mode-btn]", phase2Root).forEach(function (btn) {
+      var on = btn.getAttribute("data-view-mode-btn") === viewMode;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+
+    if (isNotebook) {
+      qsa("[data-section-bucket].is-rearranging", phase2Root).forEach(function (section) {
+        finishRearrange(section, null);
+      });
+      rebuildNotebookSidebar();
+      if (activeNotebookTag) {
+        openNotebook(activeNotebookTag, activeNotebookFolderLabel);
+      }
+    } else {
+      setNotebookRearrangeMode(false);
+      applyFilter();
+    }
+  }
+
+  function copyNotebookAll() {
+    if (!notebookNotesEl || !activeNotebookTag) return Promise.resolve();
+    var partsPlain = [];
+    var partsHtml = [];
+    qsa(".notebook-note[data-org-id]", notebookNotesEl).forEach(function (note) {
+      var titleEl = qs(".notebook-note__title", note);
+      var title = titleEl ? titleEl.textContent : "";
+      var body = note.getAttribute("data-full-text") || "";
+      var payload = noteCopyPayload(title, body);
+      if (payload.plain) partsPlain.push(payload.plain);
+      if (payload.html) partsHtml.push(payload.html);
+    });
+    if (!partsPlain.length) return Promise.resolve();
+    return copyRich(partsPlain.join("\n\n---\n\n"), partsHtml.join("<hr>"));
   }
 
   function mergeFilterGroupHeadings(left, right) {
@@ -919,6 +1577,147 @@
     var next = window.prompt(message, current);
     if (next === null) return;
     setFilterGroupHeadingAt(groupIndex, next);
+  }
+
+  var notebookFolderRename = {
+    folder: null,
+    input: null,
+    committed: false,
+  };
+
+  function notebookFolderDisplayLabel(folderEl) {
+    var named = String(folderEl.getAttribute("data-notebook-folder-heading") || "").trim();
+    if (named) return { text: named, untitled: false };
+    var untitledIndex = 0;
+    var found = { text: "Untitled #1", untitled: true };
+    qsa(".notebook-folder", notebookFoldersEl).forEach(function (el) {
+      if (String(el.getAttribute("data-notebook-folder-heading") || "").trim()) return;
+      untitledIndex += 1;
+      if (el === folderEl) found = notebookFolderLabel("", untitledIndex);
+    });
+    return found;
+  }
+
+  function restoreNotebookFolderNameEl(folderEl, replaceEl) {
+    if (!folderEl || !replaceEl) return;
+    var labelInfo = notebookFolderDisplayLabel(folderEl);
+    var named = !labelInfo.untitled;
+    var nameEl = document.createElement("span");
+    nameEl.className = "notebook-folder__name";
+    nameEl.setAttribute("data-notebook-folder-rename", "");
+    nameEl.setAttribute("role", "button");
+    nameEl.setAttribute("tabindex", "0");
+    nameEl.setAttribute(
+      "title",
+      named ? "Click to rename" : "Click to name this folder"
+    );
+    nameEl.setAttribute(
+      "aria-label",
+      named ? "Rename folder " + labelInfo.text : "Name folder " + labelInfo.text
+    );
+    nameEl.textContent = labelInfo.text;
+    replaceEl.replaceWith(nameEl);
+    folderEl.classList.remove("is-renaming");
+  }
+
+  function commitNotebookFolderRename() {
+    if (notebookFolderRename.committed) return;
+    var folder = notebookFolderRename.folder;
+    var input = notebookFolderRename.input;
+    if (!folder || !input) return;
+    notebookFolderRename.committed = true;
+    var groupIndex = parseInt(folder.getAttribute("data-notebook-folder") || "-1", 10);
+    var next = String(input.value || "").trim();
+    var prev = String(folder.getAttribute("data-notebook-folder-heading") || "").trim();
+    notebookFolderRename.folder = null;
+    notebookFolderRename.input = null;
+    if (isNaN(groupIndex) || groupIndex < 0 || next === prev) {
+      restoreNotebookFolderNameEl(folder, input);
+      notebookFolderRename.committed = false;
+      return;
+    }
+    setFilterGroupHeadingAt(groupIndex, next);
+    notebookFolderRename.committed = false;
+  }
+
+  function abortNotebookFolderRename() {
+    var folder = notebookFolderRename.folder;
+    var input = notebookFolderRename.input;
+    if (!folder || !input) return;
+    notebookFolderRename.committed = true;
+    notebookFolderRename.folder = null;
+    notebookFolderRename.input = null;
+    restoreNotebookFolderNameEl(folder, input);
+    notebookFolderRename.committed = false;
+  }
+
+  function beginNotebookFolderRename(folderEl) {
+    if (!folderEl || folderEl.classList.contains("is-renaming")) return;
+    if (notebookFolderRename.folder && notebookFolderRename.folder !== folderEl) {
+      commitNotebookFolderRename();
+    }
+    var nameEl = qs("[data-notebook-folder-rename]", folderEl);
+    if (!nameEl) return;
+    var current = String(folderEl.getAttribute("data-notebook-folder-heading") || "").trim();
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "notebook-folder__input";
+    input.setAttribute("data-notebook-folder-input", "");
+    input.value = current;
+    input.setAttribute("aria-label", "Folder name");
+    input.maxLength = 80;
+    input.placeholder = "Folder name";
+    folderEl.classList.add("is-renaming");
+    nameEl.replaceWith(input);
+    notebookFolderRename.folder = folderEl;
+    notebookFolderRename.input = input;
+    notebookFolderRename.committed = false;
+    input.focus();
+    input.select();
+
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        commitNotebookFolderRename();
+        return;
+      }
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        abortNotebookFolderRename();
+      }
+    });
+
+    input.addEventListener("blur", function () {
+      if (notebookFolderRename.input === input) {
+        commitNotebookFolderRename();
+      }
+    });
+
+    input.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+    });
+    input.addEventListener("mousedown", function (ev) {
+      ev.stopPropagation();
+    });
+  }
+
+  function toggleNotebookFolder(folder) {
+    if (!folder || folder.classList.contains("is-renaming")) return;
+    var willCollapse = !folder.classList.contains("is-collapsed");
+    folder.classList.toggle("is-collapsed", willCollapse);
+    var head = qs(".notebook-folder__head", folder);
+    var toggleBtn = qs(".notebook-folder__toggle", folder);
+    if (head) {
+      head.setAttribute(
+        "title",
+        willCollapse ? "Expand folder" : "Collapse folder"
+      );
+    }
+    if (toggleBtn) {
+      toggleBtn.setAttribute("aria-expanded", willCollapse ? "false" : "true");
+    }
   }
 
   function moveFilterItem(fromIndex, toIndex) {
@@ -1301,24 +2100,27 @@
       group.appendChild(menuWrap);
       clusterBody.appendChild(group);
     });
+
+    if (viewMode === "notebook") {
+      rebuildNotebookSidebar();
+    }
   }
 
   function applyFilter() {
     qsa(".item-card[data-org-id]", phase2Root).forEach(function (card) {
-      if (!activeFilterTag) {
-        card.hidden = false;
-        return;
+      var tagOk = true;
+      if (activeFilterTag) {
+        var tags = [];
+        try {
+          tags = JSON.parse(card.getAttribute("data-tags") || "[]");
+        } catch (err) {
+          tags = [];
+        }
+        tagOk = normalizeTagList(tags).some(function (tag) {
+          return tag.toLowerCase() === activeFilterTag.toLowerCase();
+        });
       }
-      var tags = [];
-      try {
-        tags = JSON.parse(card.getAttribute("data-tags") || "[]");
-      } catch (err) {
-        tags = [];
-      }
-      var match = normalizeTagList(tags).some(function (tag) {
-        return tag.toLowerCase() === activeFilterTag.toLowerCase();
-      });
-      card.hidden = !match;
+      card.hidden = !(tagOk && cardMatchesKind(card));
     });
   }
 
@@ -1644,6 +2446,18 @@
       filterLayoutState = [];
     }
 
+    var notebookOrderDataEl = qs("#phase2-notebook-order-data");
+    try {
+      notebookOrderState = notebookOrderDataEl
+        ? JSON.parse(notebookOrderDataEl.textContent || "{}")
+        : {};
+      if (!notebookOrderState || typeof notebookOrderState !== "object" || Array.isArray(notebookOrderState)) {
+        notebookOrderState = {};
+      }
+    } catch (err) {
+      notebookOrderState = {};
+    }
+
     var suggestionsDataEl = qs("#phase2-suggestions-data");
     try {
       suggestionsState = normalizeSuggestionsState(
@@ -1663,7 +2477,103 @@
     rebuildFilterBar();
     applyFilter();
 
+    if (reviewLocked && notebookView) {
+      setViewMode("panels");
+    }
+
     phase2Root.addEventListener("click", function (e) {
+      var viewModeBtn = e.target.closest("[data-view-mode-btn]");
+      if (viewModeBtn) {
+        setViewMode(viewModeBtn.getAttribute("data-view-mode-btn") || "panels");
+        return;
+      }
+
+      var kindFilterBtn = e.target.closest("[data-kind-filter-btn]");
+      if (kindFilterBtn) {
+        setKindFilter(kindFilterBtn.getAttribute("data-kind-filter-btn") || "");
+        return;
+      }
+
+      var folderRename = e.target.closest("[data-notebook-folder-rename]");
+      if (folderRename) {
+        e.preventDefault();
+        beginNotebookFolderRename(folderRename.closest(".notebook-folder"));
+        return;
+      }
+
+      if (e.target.closest("[data-notebook-folder-input]")) {
+        return;
+      }
+
+      var folderToggleHit = e.target.closest("[data-notebook-folder-toggle]");
+      if (folderToggleHit) {
+        toggleNotebookFolder(folderToggleHit.closest(".notebook-folder"));
+        return;
+      }
+
+      var notebookNav = e.target.closest(".notebook-nav[data-notebook-tag]");
+      if (notebookNav) {
+        var navTag = notebookNav.getAttribute("data-notebook-tag") || "";
+        if (
+          notebookNav.classList.contains("is-disabled") ||
+          notebookNav.getAttribute("aria-disabled") === "true"
+        ) {
+          showNotebookKindEmptyToast(navTag);
+          return;
+        }
+        openNotebook(
+          navTag,
+          notebookNav.getAttribute("data-notebook-folder-label") || ""
+        );
+        return;
+      }
+
+      var noteCollapse = e.target.closest("[data-notebook-note-collapse]");
+      if (noteCollapse) {
+        var noteEl = noteCollapse.closest(".notebook-note");
+        if (!noteEl) return;
+        if (notebookView && notebookView.classList.contains("is-rearranging")) {
+          finishNotebookRearrange(null);
+        }
+        setNotebookNoteCollapsed(noteEl, !noteEl.classList.contains("is-collapsed"));
+        var expanded = !noteEl.classList.contains("is-collapsed");
+        noteCollapse.setAttribute("title", expanded ? "Collapse note" : "Expand note");
+        noteCollapse.setAttribute("aria-label", expanded ? "Collapse note" : "Expand note");
+        return;
+      }
+
+      var noteCopy = e.target.closest("[data-notebook-note-copy]");
+      if (noteCopy) {
+        var copyNoteEl = noteCopy.closest(".notebook-note");
+        if (!copyNoteEl) return;
+        var noteTitleEl = qs(".notebook-note__title", copyNoteEl);
+        copyNote(
+          noteTitleEl ? noteTitleEl.textContent : "",
+          copyNoteEl.getAttribute("data-full-text") || ""
+        ).then(function () {
+          flashCopyButton(noteCopy);
+        }).catch(function () {});
+        return;
+      }
+
+      if (e.target.closest("[data-notebook-rearrange]")) {
+        if (!activeNotebookTag) return;
+        var turningOn = !(notebookView && notebookView.classList.contains("is-rearranging"));
+        if (turningOn) {
+          setNotebookRearrangeMode(true);
+        } else {
+          finishNotebookRearrange(null);
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-notebook-copy]")) {
+        copyNotebookAll().then(function () {
+          flashCopyButton(notebookCopyBtn);
+        }).catch(function () {});
+        return;
+      }
+
       var itemSuggestToggle = e.target.closest("[data-suggest-toggle]");
       if (itemSuggestToggle) {
         if (reviewLocked) return;
@@ -1868,6 +2778,25 @@
         return;
       }
 
+      var notebookNote = e.target.closest(".notebook-note[data-org-id]");
+      if (notebookNote) {
+        if (!notebookView || !notebookView.classList.contains("is-rearranging")) {
+          e.preventDefault();
+          return;
+        }
+        notebookDrag.note = notebookNote;
+        notebookDrag.didReorder = false;
+        notebookNote.classList.add("is-dragging");
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData(
+            "text/plain",
+            notebookNote.getAttribute("data-org-id") || ""
+          );
+        }
+        return;
+      }
+
       var card = e.target.closest(".item-card[data-org-id]");
       var section = card ? card.closest("[data-section-bucket].is-rearranging") : null;
       if (!card || !section) {
@@ -1897,6 +2826,22 @@
           el.classList.toggle("is-drop-before", at === dropIndex);
         });
         filterBar.classList.toggle("is-drop-end", dropIndex === filterLayoutState.length);
+        return;
+      }
+
+      if (notebookDrag.note && notebookNotesEl) {
+        if (!e.target.closest("[data-notebook-notes]")) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        var afterNote = getNotebookDragAfterElement(e.clientY);
+        clearNotebookDropTargets();
+        if (afterNote == null) {
+          notebookNotesEl.appendChild(notebookDrag.note);
+        } else if (afterNote !== notebookDrag.note) {
+          notebookNotesEl.insertBefore(notebookDrag.note, afterNote);
+          afterNote.classList.add("is-drop-target");
+        }
+        notebookDrag.didReorder = true;
         return;
       }
 
@@ -1939,6 +2884,13 @@
         return;
       }
 
+      if (notebookDrag.note) {
+        e.preventDefault();
+        var settleNotebookNote = notebookDrag.note;
+        finishNotebookRearrange(settleNotebookNote);
+        return;
+      }
+
       if (!dragState.card || !dragState.section) return;
       e.preventDefault();
       var settle = dragState.card;
@@ -1959,6 +2911,17 @@
         setTimeout(function () {
           filterDrag.didDrag = false;
         }, 0);
+        return;
+      }
+
+      if (notebookDrag.note) {
+        var settleNb = notebookDrag.note;
+        if (notebookView && notebookView.classList.contains("is-rearranging")) {
+          finishNotebookRearrange(settleNb);
+        } else {
+          settleNb.classList.remove("is-dragging", "is-drop-target");
+          notebookDrag.note = null;
+        }
         return;
       }
 
@@ -1994,6 +2957,10 @@
 
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
+        if (notebookFolderRename.input) {
+          abortNotebookFolderRename();
+          return;
+        }
         closeAllMoveMenus();
         closeAllFilterMenus();
         closeSectionInfoTips();
@@ -2001,7 +2968,18 @@
         qsa("[data-section-bucket].is-rearranging", phase2Root).forEach(function (section) {
           finishRearrange(section, null);
         });
+        if (notebookView && notebookView.classList.contains("is-rearranging")) {
+          finishNotebookRearrange(null);
+        }
       }
+    });
+
+    phase2Root.addEventListener("keydown", function (e) {
+      var renameTarget = e.target.closest("[data-notebook-folder-rename]");
+      if (!renameTarget) return;
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      beginNotebookFolderRename(renameTarget.closest(".notebook-folder"));
     });
 
     phase2Root.addEventListener("input", function (e) {
