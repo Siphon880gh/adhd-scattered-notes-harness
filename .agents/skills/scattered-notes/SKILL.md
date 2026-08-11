@@ -3,9 +3,10 @@ name: scattered-notes
 description: >-
   Process a folder of scattered ADHD notes under inputs/ into Phase 1 clarity
   marks, Phase 2 organized tasks/reference with per-line fidelity, and Phase 3
-  area tags. Use when the user wants to organize braindump .md/.txt notes, run
-  the scattered-notes harness, update shorthands, or advance phase1/phase2/phase3
-  artifacts for index.php.
+  area tags. Use when the user wants to organize braindump .md/.txt notes
+  (including .url.txt link captures), run the scattered-notes harness, update
+  shorthands, enrich YouTube/web links (or collect browser pastes for blocked
+  URLs), or advance phase1/phase2/phase3 artifacts for index.php.
 ---
 
 # Scattered Notes Harness
@@ -32,8 +33,8 @@ Per batch folder `inputs/{folder}/`:
 
 | File | Role |
 |------|------|
-| `*.md`, `*.txt` | Raw scattered notes |
-| `phase1.json` | Uncertain marks + YouTube enrichments |
+| `*.md`, `*.txt` | Raw scattered notes (includes `*.url.txt` — URL capture files) |
+| `phase1.json` | Uncertain marks + YouTube + link enrichments (incl. blocked URLs awaiting user paste) |
 | `phase2.json` | Organized notes + per-line blame map + item tags (+ optional `filterLayout`) |
 | `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole-section panels (Scattered / Reference / Articles); **read before writing/revising Phase 2** |
 
@@ -65,6 +66,40 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
           "text": "https://youtu.be/...",
           "marks": [],
           "youtube": { "title": "...", "about": "...", "added": true }
+        },
+        {
+          "n": 3,
+          "text": "https://example.com/article",
+          "marks": [],
+          "link": {
+            "url": "https://example.com/article",
+            "intent": "bubble vs merge sort complexity",
+            "title": "...",
+            "about": "...",
+            "added": true,
+            "blocked": false,
+            "userPaste": "",
+            "userNote": ""
+          }
+        }
+      ]
+    },
+    "b.url.txt": {
+      "lines": [
+        {
+          "n": 1,
+          "text": "http://localhost:59999/sorting-notes",
+          "marks": [],
+          "link": {
+            "url": "http://localhost:59999/sorting-notes",
+            "intent": "",
+            "title": "",
+            "about": "",
+            "added": false,
+            "blocked": true,
+            "userPaste": "",
+            "userNote": ""
+          }
         }
       ]
     }
@@ -72,14 +107,21 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
 }
 ```
 
-- Include **every** line of every note file (`n` is 1-based; `text` is the original line).
+- Include **every** line of every note file (`n` is 1-based; `text` is the original line). `*.url.txt` files are note files too — include them.
 - Mark unsure tokens especially symbols / shorthand that do not make sense after reading `shorthands.md`.
 - For every YouTube / `youtu.be` URL: **fetch real metadata** (do not invent titles from the URL alone). Prefer YouTube oEmbed `https://www.youtube.com/oembed?url={URL}&format=json`, or fetch the watch page. Then set `youtube` with:
   - `title` — exact video title from the fetch
   - `about` — 1–2 sentences from title + description (and comments if useful)
   - `added: true`
   Do **not** watch the video. The app renders this like a git-diff green added line.
-- **Forbidden** YouTube titles/abouts: placeholders such as “YouTube link”, “metadata placeholder”, “unknown video”, empty `about` when the URL is reachable, or any invented stub. If fetch fails after trying: `title` = `YouTube (lookup failed)` and put the failure reason in `about`.
+- **Forbidden** YouTube titles/abouts: placeholders such as “YouTube link”, “metadata placeholder”, “unknown video”, empty `about` when the URL is reachable, or any invented stub. If fetch fails after trying: treat like any other blocked URL — use `link` with `blocked: true` (see below), **or** for YouTube-only fallback: `title` = `YouTube (lookup failed)` and put the failure reason in `about`. Prefer the shared `link` blocked panel so the user can paste from their browser.
+- **Non-YouTube links** (any `http://` / `https://` URL in any note, plus the whole contents of `*.url.txt` files): visit the page and enrich with a `link` object on the line that holds the URL (for multi-line `.url.txt` notes, put `link` on the URL line; use surrounding lines as `intent`).
+  - `url` — canonical URL string
+  - `intent` — what to look up, taken from surrounding text in the same note (lines before/after the URL within the `---` / blank-line note boundary, or other lines in a `.url.txt` file). Empty string if the note is URL-only.
+  - When the page **opens**: set `title` / `about` from the real page. If `intent` is set, focus `about` on that request (e.g. extract the complexity comparison they asked for); otherwise summarize the page in 1–3 sentences. Set `added: true`, `blocked: false`, leave `userPaste` / `userNote` empty (or preserve any prior user paste).
+  - When the page **fails to open** (timeout, connection refused, HTTP error, bot wall, empty body — **any** fetch failure): set `blocked: true`, `added: false`, empty `title`/`about` (unless already filled from a prior user paste). Do **not** invent page content. The app shows a **blocked-URL panel** so the user can open the URL in their browser, describe what they need, and paste relevant text. Re-read `phase1.json` after they paste — the app writes `userPaste` / `userNote` via `index.php?action=save-url-paste`.
+  - After the user pastes: derive `title` / `about` from `userPaste` (+ `userNote` / `intent`), set `added: true`, keep `blocked: true` only if you still lack enough text (otherwise `blocked: false`). Never wipe `userPaste` / `userNote`.
+  - **Forbidden** link stubs: invented titles, “could not fetch”, or fake summaries when `blocked` is true and `userPaste` is empty.
 
 ### `phase2.json`
 
@@ -108,6 +150,8 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
 Every source line must have a `blame` entry. Use fates such as: `mapped`, `merged`, `reference`, `uncertain_carried`, `dropped_duplicate`, `dropped_noise`, `separator`.
 
 Phase 2 items that come from a YouTube line **must reuse** `youtube.title` and `youtube.about` from `phase1.json` (e.g. reference title = that title; body includes the URL plus `about`). Do **not** invent a new title or write a metadata placeholder in Phase 2.
+
+Phase 2 items that come from a non-YouTube link / `*.url.txt` line **must reuse** `link.title` and `link.about` from `phase1.json` when `link.added` is true (body includes the URL plus `about`; honor `intent` in the wording). If `link.blocked` is still true and `userPaste` is empty, keep the item honest (e.g. reference titled from the URL host + “blocked — paste pending”) — do **not** invent page content. If `userPaste` is present but Phase 1 was not re-run, you may derive title/about from the paste during Phase 2.
 
 **Browser edits:** In Phase 2, the app POSTs to `index.php?action=save-phase2` and writes moves, tags, reorder, green-check (`checked`), and `filterLayout` into this same `phase2.json`. Phase 3 still saves moves/tags/reorder/`filterLayout`, but **Suggest** and green-check are locked off (review is finished). Always **re-read** `phase2.json` before Phase 3 or any fidelity fix so user edits are not overwritten blindly. Preserve each item’s `checked` boolean when rewriting organized items.
 
@@ -210,13 +254,13 @@ Selecting sample is never “open whatever is already there” — **Reset sampl
 
 - **If they choose “Reset sample and select it”:**
   1. Delete the entire `inputs/sample/` directory if it exists.
-  2. Recreate `inputs/sample/` with only the three note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
+  2. Recreate `inputs/sample/` with only the five note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
   3. Write `app.config.json` with `"inputFolder": "sample"` and `"phase": 1`.
   4. Continue with Phase 1 on `sample`.
 
 - **If they choose “See the app with no folder selected”:**
   1. Delete the entire `inputs/sample/` directory if it exists.
-  2. Recreate `inputs/sample/` with only the three note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
+  2. Recreate `inputs/sample/` with only the five note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
   3. Write `app.config.json` with `"inputFolder": ""` and `"phase": 1` (no project selected).
   4. Tell them to open `index.php` to see the empty-state screen. Remind them this is only a preview — they still must pick a folder or say they want to select sample before the app can show notes/artifacts. Stop and re-offer folder options (without auto-continuing into Phase 1).
 
@@ -240,6 +284,19 @@ Selecting sample is never “open whatever is already there” — **Reset sampl
   1. Tell them to create `inputs/{name}/` and add notes, then re-run.
 
 #### Sample note templates (recreate exactly; no phase JSON)
+
+`inputs/sample/a.url.txt`:
+
+```text
+https://www.geeksforgeeks.org/dsa/introduction-to-sorting-algorithm/
+```
+
+`inputs/sample/b.url.txt`:
+
+```text
+Need bubble vs merge sort time complexity from this page
+http://localhost:59999/sorting-notes
+```
 
 `inputs/sample/braindump.md`:
 
@@ -294,19 +351,22 @@ asdf vs nvm vs mise — pick one for node on laptop, stop installing globally wi
 WTF is the difference between EXPOSE and publishing -p again
 ```
 
-### 1. Phase 1 — mark uncertain + YouTube
+### 1. Phase 1 — mark uncertain + YouTube + links
 
 1. Ensure project-root `shorthands.md` exists (create a stub with `# Shorthands` and an empty table if missing).
 2. **Read root `shorthands.md` fully** before marking anything.
-3. Read all note `.md`/`.txt` files in the folder.
-4. For **each** YouTube / `youtu.be` URL found: run a metadata fetch (oEmbed or watch page) **before** writing `phase1.json`. Fill `youtube.title` / `youtube.about` from that response only.
-5. Write/update `phase1.json` with line-level marks and YouTube descriptors (no placeholder titles).
-6. Set `app.config.json` `"phase": 1`.
-7. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks, and **return to this chat** to:
+3. Read all note `.md`/`.txt` files in the folder (including `*.url.txt`).
+4. For **each** YouTube / `youtu.be` URL found: run a metadata fetch (oEmbed or watch page) **before** writing `phase1.json`. Fill `youtube.title` / `youtube.about` from that response only. If the fetch fails, use the blocked-`link` path below so the app can collect a browser paste.
+5. For **each** non-YouTube `http(s)` URL (inline in notes **or** in `*.url.txt` files): try to visit the page **before** writing `phase1.json`. Capture surrounding-note text as `link.intent`. On success: fill `link.title` / `link.about` (honor intent), `added: true`, `blocked: false`. On **any** failure to open/read the page: `blocked: true`, `added: false`, do not invent content.
+6. **Preserve** any existing `link.userPaste` / `link.userNote` already saved by the app when rewriting `phase1.json`. If paste text is present for a blocked URL, derive `title`/`about` from it and set `added: true`.
+7. Write/update `phase1.json` with line-level marks, YouTube descriptors, and link enrichments (no placeholder titles).
+8. Set `app.config.json` `"phase": 1`.
+9. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks / green added descriptors / **blocked-URL paste panels**, and **return to this chat** to:
    - explain any flagged shorthand/symbols, or
+   - say they pasted blocked-URL text (re-read `phase1.json` and enrich from `userPaste`), or
    - say Phase 1 looks good and advance to Phase 2.
 
-Phase 1 may loop: user explains → update root `shorthands.md` → rewrite `phase1.json` → user refreshes the app.
+Phase 1 may loop: user explains → update root `shorthands.md` → rewrite `phase1.json`; or user pastes blocked URL text in the app → re-read pastes → rewrite link enrichments → user refreshes the app.
 
 ### 2. Phase 2 — organize with fidelity
 
@@ -316,9 +376,10 @@ Only after the user confirms Phase 1 is done:
 2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: tasks|reference|articleCandidates` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`**, and applying whole-section guidance (tagging / heading style / ordering) as needed.
 3. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
 4. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
-5. Account for every line in `blame` — fidelity first; do not silently drop details.
-6. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md`.
-7. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
+5. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
+6. Account for every line in `blame` — fidelity first; do not silently drop details.
+7. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md`.
+8. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
    - **green-check** items as they review;
    - **add tags** or **move items** between Scattered / Reference / Articles (and rearrange within a panel);
    - those panel edits **save into `phase2.json`** via the PHP endpoint so this chat can see them later;
@@ -360,23 +421,24 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 
 1. On every start: read `app.config.json`, list `inputs/` folders, detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3), announce state, then offer the matching option set from §0.
 2. Mid-session: offer **Continue** first (phase 2 wording: review parse fidelity — nothing dropped; invite **Suggest** for notes that should change); Final: offer **Continue (phase 3, locked)** first — filter/copy exit — and remind **“Revert to Phase 2”** then refresh unlocks Suggest again. Do not wipe an in-progress or finished batch unless they choose a reset/switch.
-3. If reset sample + select: delete `inputs/sample/`, recreate note files only (no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
+3. If reset sample + select: delete `inputs/sample/`, recreate note files only (five files including `a.url.txt` / `b.url.txt`; no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
 4. If “See the app with no folder selected”: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`; empty-state preview only — they still must pick a folder or select sample afterward; re-offer folders.
 5. If another / switch folder: update `app.config.json` to that folder phase 1.
 6. Read root `shorthands.md` before any uncertainty marks.
 7. Never treat root `shorthands.md` / `phase1.json` / `phase2.json` / `phase2-suggestions.md` as source notes.
 8. Phase 1 artifacts must be visible in the app after refresh.
-9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure only: `YouTube (lookup failed)`.
-10. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file.
-11. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`.
-12. Phase 2: every line in every note file appears in `blame`.
-13. Do not advance to Phase 2 without explicit user confirmation.
-14. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body`); they may also tag/move (writes `phase2.json`); Phase 3 will auto-tag.
-15. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite before tagging.
-16. Do not advance to Phase 3 without explicit user confirmation.
-17. Phase 3: tag all organized items; preserve user tags; **always write `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
-18. On **“Revert to Phase 2”**: set `"phase": 2` (keep folder + artifacts); tell them to refresh the app; resume Phase 2.
-19. After each write, remind the user how to return to Cursor / Claude Code to continue (Phase 3: optional tag refine, or **“Revert to Phase 2”**).
+9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure: prefer blocked `link` panel (or `YouTube (lookup failed)` fallback).
+10. Every non-YouTube URL and every `*.url.txt`: try fetch; set `link` with intent from surrounding text; on failure `blocked: true` and wait for app paste (`userPaste`/`userNote`). Preserve pastes across rewrites. After paste: derive `title`/`about`, set `added: true`.
+11. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file.
+12. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`. Link items reuse Phase 1 `link.title` / `link.about` when added.
+13. Phase 2: every line in every note file appears in `blame`.
+14. Do not advance to Phase 2 without explicit user confirmation.
+15. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body`); they may also tag/move (writes `phase2.json`); Phase 3 will auto-tag.
+16. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite before tagging.
+17. Do not advance to Phase 3 without explicit user confirmation.
+18. Phase 3: tag all organized items; preserve user tags; **always write `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
+19. On **“Revert to Phase 2”**: set `"phase": 2` (keep folder + artifacts); tell them to refresh the app; resume Phase 2.
+20. After each write, remind the user how to return to Cursor / Claude Code to continue (Phase 3: optional tag refine, or **“Revert to Phase 2”**).
 
 ## Return-to-chat prompts (for the user)
 
@@ -389,6 +451,7 @@ Across **all phases**, the user can drive the harness with short phrases:
 After Phase 1 writes, also tell them they can say things like:
 
 - “`wtf` means write the function”
+- “I pasted the blocked URL text in the app — continue”
 - “Phase 1 looks good — start Phase 2”
 
 After Phase 2 writes:
