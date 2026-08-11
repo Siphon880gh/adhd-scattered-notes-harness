@@ -15,7 +15,13 @@
                 {
                     "n": 3,
                     "text": "wtf does nginx -t actually validate? reload vs restart again",
-                    "marks": []
+                    "marks": [
+                        {
+                            "type": "uncertain",
+                            "token": "wtf",
+                            "note": "unknown shorthand"
+                        }
+                    ]
                 },
                 {
                     "n": 4,
@@ -203,7 +209,13 @@
                 {
                     "n": 14,
                     "text": "WTF is the difference between EXPOSE and publishing -p again",
-                    "marks": []
+                    "marks": [
+                        {
+                            "type": "uncertain",
+                            "token": "WTF",
+                            "note": "unknown shorthand"
+                        }
+                    ]
                 }
             ]
         },
