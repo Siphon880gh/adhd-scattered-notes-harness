@@ -512,6 +512,10 @@
     },
     "filterLayout": [
         {
+            "type": "heading",
+            "name": "Servers"
+        },
+        {
             "type": "tag",
             "name": "nginx"
         },
@@ -538,6 +542,10 @@
             "type": "divider"
         },
         {
+            "type": "heading",
+            "name": "Untitled #1"
+        },
+        {
             "type": "tag",
             "name": "firewall"
         },
@@ -562,6 +570,10 @@
         },
         {
             "type": "divider"
+        },
+        {
+            "type": "heading",
+            "name": "a"
         },
         {
             "type": "tag",
@@ -604,5 +616,12 @@
             "type": "tag",
             "name": "youtube"
         }
-    ]
+    ],
+    "notebookOrder": {
+        "docker": [
+            "t8",
+            "t7",
+            "r6"
+        ]
+    }
 }
