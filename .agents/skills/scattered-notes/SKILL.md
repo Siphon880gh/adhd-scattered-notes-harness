@@ -96,8 +96,10 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
     ]
   },
   "filterLayout": [
+    { "type": "heading", "name": "Web" },
     { "type": "tag", "name": "linux" },
     { "type": "divider" },
+    { "type": "heading", "name": "Proxy" },
     { "type": "tag", "name": "nginx" }
   ]
 }
@@ -331,7 +333,7 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 2. **Re-read** `phase2.json` again so any browser moves/tags/reorder are included.
 3. Set `app.config.json` `"phase": 3`.
 4. Tag every organized item (`tasks`, `reference`, `articleCandidates`) so related notes share tags.
-5. **Always write `filterLayout`** in `phase2.json` (required, not optional): order all tags into related groups and insert `{ "type": "divider" }` **between major areas** so the Filter bar is scannable. Include every tag used on any item. Do not leave a flat ungrouped tag list. If the user already ordered tags/dividers in the app, keep their order where it still makes sense and only insert missing tags (with dividers for new major areas).
+5. **Always write `filterLayout`** in `phase2.json` (required, not optional): order all tags into related groups and insert `{ "type": "divider" }` **between major areas** so the Filter bar is scannable. Prefer a `{ "type": "heading", "name": "…" }` before each major group when the area label is clear. Include every tag used on any item. Do not leave a flat ungrouped tag list. If the user already ordered tags/dividers/headings in the app, keep their order and headings where it still makes sense and only insert missing tags (with dividers for new major areas).
 6. Write the updated `tags` + `filterLayout` (and keep `blame` / bucket placement / user edits / `checked`) back to `phase2.json`. Do **not** wipe `phase2-suggestions.md`.
 7. Tell the user to refresh `index.php`: Phase 3 is **locked in** — no Suggest buttons, no green-check marking. The app’s job now is to **filter by tag and Copy** cards (or whole panels) into their permanent notes app. Tag/move tweaks still save to `phase2.json`; return to chat only to refine tags if needed. **Always mention** they can return to Phase 2 anytime by saying **“Revert to Phase 2”** in this chat, then refreshing the app (Suggest / green-check unlock; organized notes stay).
 
@@ -348,9 +350,11 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 
 - **Always** emit `filterLayout` when writing Phase 3 `phase2.json`.
 - Group related tags together (same area / hierarchy), then put a divider between groups.
-- Example shape: `nginx`, `certs`, `firewall` → divider → `docker`, `compose` → divider → `node`, `tooling`.
+- Optionally name each group with `{ "type": "heading", "name": "…" }` immediately before that group’s tags (after a divider, or at the start for the first group). Headings are labels only — not filterable tags.
+- Example shape: heading `Web` → `nginx`, `certs` → divider → heading `Containers` → `docker`, `compose` → divider → `node`, `tooling`.
 - No leading/trailing divider required; never stack two dividers in a row; every tag name in `filterLayout` must exist on at least one item (and every item tag must appear once in the layout).
-- When refining tags later in a phase-3 session, refresh `filterLayout` the same way.
+- If the user already named groups in the app, **preserve those headings** when refining tags (only add headings for new major areas when helpful).
+- When refining tags later in a phase-3 session, refresh `filterLayout` the same way. Note: if the user removes a divider in the app, the two group headings merge as `Heading A + Heading B`.
 
 ## Agent checklist
 

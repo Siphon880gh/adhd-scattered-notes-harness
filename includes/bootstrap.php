@@ -11,6 +11,16 @@ function e(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+/** Cache-bust local asset URLs with ?t=filemtime. */
+function asset_url(string $relativePath): string
+{
+    $relativePath = ltrim($relativePath, '/');
+    $fullPath = app_root() . '/' . $relativePath;
+    $t = is_file($fullPath) ? (string) filemtime($fullPath) : (string) time();
+
+    return $relativePath . '?t=' . rawurlencode($t);
+}
+
 /**
  * @return array{inputFolder: string, phase: int}
  */
@@ -201,6 +211,26 @@ function collect_organized_tags(array $organized): array
 }
 
 /**
+ * Merge two filter group headings when a divider between them is removed.
+ */
+function merge_filter_group_headings(string $left, string $right): string
+{
+    $left = trim($left);
+    $right = trim($right);
+    if ($left === '') {
+        return $right;
+    }
+    if ($right === '') {
+        return $left;
+    }
+    if (strcasecmp($left, $right) === 0) {
+        return $left;
+    }
+
+    return $left . ' + ' . $right;
+}
+
+/**
  * @param mixed $layout
  * @param list<string> $availableTags
  * @return list<array{type: string, name?: string}>
@@ -216,19 +246,53 @@ function normalize_filter_layout($layout, array $availableTags): array
         $available[strtolower($name)] = $name;
     }
 
-    $out = [];
+    /** @var list<array{heading: string, tags: list<string>}> $groups */
+    $groups = [];
+    $heading = '';
+    $tags = [];
     $used = [];
+
+    $flushGroup = static function () use (&$groups, &$heading, &$tags): void {
+        if ($tags === []) {
+            $heading = '';
+
+            return;
+        }
+        $groups[] = [
+            'heading' => $heading,
+            'tags' => $tags,
+        ];
+        $heading = '';
+        $tags = [];
+    };
+
     if (is_array($layout)) {
         foreach ($layout as $item) {
             if (!is_array($item)) {
                 continue;
             }
             $type = (string) ($item['type'] ?? '');
-            if ($type === 'divider') {
-                if ($out !== [] && ($out[count($out) - 1]['type'] ?? '') === 'divider') {
+            if ($type === 'heading') {
+                $name = trim((string) ($item['name'] ?? ''));
+                if ($name === '') {
                     continue;
                 }
-                $out[] = ['type' => 'divider'];
+                if ($tags === []) {
+                    $heading = $name;
+                } elseif ($heading === '') {
+                    $heading = $name;
+                }
+                continue;
+            }
+            if ($type === 'divider') {
+                if ($tags !== []) {
+                    $flushGroup();
+                }
+                // Optional heading on divider names the following group (compat).
+                $after = trim((string) ($item['heading'] ?? ''));
+                if ($after !== '') {
+                    $heading = $after;
+                }
                 continue;
             }
             if ($type !== 'tag') {
@@ -243,9 +307,10 @@ function normalize_filter_layout($layout, array $availableTags): array
                 continue;
             }
             $used[$key] = true;
-            $out[] = ['type' => 'tag', 'name' => $available[$key]];
+            $tags[] = $available[$key];
         }
     }
+    $flushGroup();
 
     $missing = [];
     foreach ($available as $key => $name) {
@@ -254,8 +319,32 @@ function normalize_filter_layout($layout, array $availableTags): array
         }
     }
     natcasesort($missing);
-    foreach (array_values($missing) as $name) {
-        $out[] = ['type' => 'tag', 'name' => $name];
+    $missing = array_values($missing);
+    if ($missing !== []) {
+        if ($groups === []) {
+            $groups[] = ['heading' => '', 'tags' => $missing];
+        } else {
+            $last = count($groups) - 1;
+            foreach ($missing as $name) {
+                $groups[$last]['tags'][] = $name;
+            }
+        }
+    }
+
+    $out = [];
+    foreach ($groups as $index => $group) {
+        if ($group['tags'] === []) {
+            continue;
+        }
+        if ($out !== []) {
+            $out[] = ['type' => 'divider'];
+        }
+        if ($group['heading'] !== '') {
+            $out[] = ['type' => 'heading', 'name' => $group['heading']];
+        }
+        foreach ($group['tags'] as $tagName) {
+            $out[] = ['type' => 'tag', 'name' => $tagName];
+        }
     }
 
     return $out;
