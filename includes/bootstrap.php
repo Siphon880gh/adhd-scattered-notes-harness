@@ -1126,3 +1126,226 @@ function save_phase1_suggestions(string $dir, array $data): bool
 
     return file_put_contents($path, $md) !== false;
 }
+
+function snapshots_dir(): string
+{
+    return app_root() . '/snapshots';
+}
+
+function ensure_snapshots_dir(): bool
+{
+    $dir = snapshots_dir();
+    if (is_dir($dir)) {
+        return true;
+    }
+    return mkdir($dir, 0775, true);
+}
+
+/**
+ * Safe snapshot file stem (no path segments).
+ */
+function sanitize_snapshot_id(string $id): string
+{
+    $id = trim($id);
+    if ($id === '') {
+        return '';
+    }
+    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$/', $id)) {
+        return '';
+    }
+    return $id;
+}
+
+function snapshot_path(string $id): string
+{
+    $safe = sanitize_snapshot_id($id);
+    if ($safe === '') {
+        return '';
+    }
+    return snapshots_dir() . '/' . $safe . '.json';
+}
+
+/**
+ * @return list<array{id: string, name: string, sourceFolder: string, createdAt: string}>
+ */
+function list_snapshots(): array
+{
+    $dir = snapshots_dir();
+    if (!is_dir($dir)) {
+        return [];
+    }
+
+    $out = [];
+    foreach (scandir($dir) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) !== 'json') {
+            continue;
+        }
+        $id = pathinfo($name, PATHINFO_FILENAME);
+        $safe = sanitize_snapshot_id($id);
+        if ($safe === '' || $safe !== $id) {
+            continue;
+        }
+        $data = load_json_file($dir . '/' . $name);
+        if ($data === null) {
+            continue;
+        }
+        $createdAt = trim((string) ($data['createdAt'] ?? ''));
+        $mtime = @filemtime($dir . '/' . $name);
+        if ($createdAt === '' && $mtime !== false) {
+            $createdAt = gmdate('c', $mtime);
+        }
+        $sourceFolder = trim((string) ($data['sourceFolder'] ?? ''));
+        $label = trim((string) ($data['name'] ?? ''));
+        if ($label === '') {
+            $label = $sourceFolder !== '' ? $sourceFolder : $safe;
+        }
+        $out[] = [
+            'id' => $safe,
+            'name' => $label,
+            'sourceFolder' => $sourceFolder,
+            'createdAt' => $createdAt,
+        ];
+    }
+
+    usort($out, static function (array $a, array $b): int {
+        return strcmp((string) ($b['createdAt'] ?? ''), (string) ($a['createdAt'] ?? ''));
+    });
+
+    return $out;
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function load_snapshot(string $id): ?array
+{
+    $path = snapshot_path($id);
+    if ($path === '' || !is_file($path)) {
+        return null;
+    }
+    $data = load_json_file($path);
+    if ($data === null) {
+        return null;
+    }
+
+    $safe = sanitize_snapshot_id($id);
+    $organized = normalize_organized(
+        is_array($data['organized'] ?? null) ? $data['organized'] : []
+    );
+    $availableTags = collect_organized_tags($organized);
+    $filterLayout = normalize_filter_layout(
+        is_array($data['filterLayout'] ?? null) ? $data['filterLayout'] : [],
+        $availableTags
+    );
+    $notebookOrder = normalize_notebook_order(
+        $data['notebookOrder'] ?? [],
+        $organized
+    );
+
+    $name = trim((string) ($data['name'] ?? ''));
+    $sourceFolder = trim((string) ($data['sourceFolder'] ?? ''));
+    $createdAt = trim((string) ($data['createdAt'] ?? ''));
+    if ($name === '') {
+        $name = $sourceFolder !== '' ? $sourceFolder : $safe;
+    }
+
+    return [
+        'id' => $safe,
+        'name' => $name,
+        'sourceFolder' => $sourceFolder,
+        'createdAt' => $createdAt,
+        'organized' => $organized,
+        'filterLayout' => $filterLayout,
+        'notebookOrder' => $notebookOrder,
+        'blame' => is_array($data['blame'] ?? null) ? $data['blame'] : [],
+    ];
+}
+
+/**
+ * Persist a Phase 3 snapshot from the current phase2 payload. Does not touch app.config.json.
+ *
+ * @param array<string, mixed> $phase2
+ * @return array{ok: bool, error?: string, snapshot?: array{id: string, name: string, sourceFolder: string, createdAt: string, path: string}}
+ */
+function save_phase3_snapshot(string $sourceFolder, array $phase2, string $name = ''): array
+{
+    $sourceFolder = trim($sourceFolder);
+    if ($sourceFolder === '') {
+        return ['ok' => false, 'error' => 'No input folder to snapshot.'];
+    }
+    if (!ensure_snapshots_dir()) {
+        return ['ok' => false, 'error' => 'Could not create snapshots/ folder.'];
+    }
+
+    $organized = normalize_organized(
+        is_array($phase2['organized'] ?? null) ? $phase2['organized'] : []
+    );
+    $availableTags = collect_organized_tags($organized);
+    $filterLayout = normalize_filter_layout(
+        is_array($phase2['filterLayout'] ?? null) ? $phase2['filterLayout'] : [],
+        $availableTags
+    );
+    $notebookOrder = normalize_notebook_order(
+        $phase2['notebookOrder'] ?? [],
+        $organized
+    );
+    $blame = is_array($phase2['blame'] ?? null) ? $phase2['blame'] : [];
+
+    $label = trim($name);
+    if ($label === '') {
+        $label = $sourceFolder;
+    }
+    $label = mb_substr($label, 0, 80);
+
+    $stamp = gmdate('Ymd-His');
+    $folderSlug = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $sourceFolder) ?? 'folder';
+    $folderSlug = trim($folderSlug, '-._');
+    if ($folderSlug === '') {
+        $folderSlug = 'folder';
+    }
+    $baseId = $folderSlug . '-' . $stamp;
+    $id = sanitize_snapshot_id($baseId);
+    if ($id === '') {
+        return ['ok' => false, 'error' => 'Could not build a safe snapshot id.'];
+    }
+    $path = snapshot_path($id);
+    $n = 1;
+    while ($path !== '' && is_file($path) && $n < 50) {
+        $id = sanitize_snapshot_id($baseId . '-' . $n);
+        $path = snapshot_path($id);
+        $n++;
+    }
+    if ($id === '' || $path === '' || is_file($path)) {
+        return ['ok' => false, 'error' => 'Snapshot id collision — try again.'];
+    }
+
+    $createdAt = gmdate('c');
+    $payload = [
+        'id' => $id,
+        'name' => $label,
+        'sourceFolder' => $sourceFolder,
+        'createdAt' => $createdAt,
+        'organized' => $organized,
+        'filterLayout' => $filterLayout,
+        'notebookOrder' => $notebookOrder === [] ? new \stdClass() : $notebookOrder,
+        'blame' => $blame,
+    ];
+
+    if (!save_json_file($path, $payload)) {
+        return ['ok' => false, 'error' => 'Could not write snapshot file.'];
+    }
+
+    return [
+        'ok' => true,
+        'snapshot' => [
+            'id' => $id,
+            'name' => $label,
+            'sourceFolder' => $sourceFolder,
+            'createdAt' => $createdAt,
+            'path' => 'snapshots/' . $id . '.json',
+        ],
+    ];
+}

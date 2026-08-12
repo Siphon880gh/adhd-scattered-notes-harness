@@ -205,6 +205,69 @@ if (
     exit;
 }
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'save-snapshot'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase !== 3) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Snapshots can only be saved from Phase 3.']);
+        exit;
+    }
+
+    $phase2Path = $dir . '/phase2.json';
+    $existing = load_json_file($phase2Path);
+    if ($existing === null) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'phase2.json is missing.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    $name = '';
+    if (is_array($payload) && isset($payload['name'])) {
+        $name = trim((string) $payload['name']);
+    }
+
+    $result = save_phase3_snapshot($folder, $existing, $name);
+    if (empty($result['ok'])) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => (string) ($result['error'] ?? 'Could not save snapshot.')]);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'snapshot' => $result['snapshot'],
+    ]);
+    exit;
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'GET'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'list-snapshots'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ok' => true,
+        'snapshots' => list_snapshots(),
+    ]);
+    exit;
+}
+
+$livePhase = $phase;
+$liveFolder = $folder;
+$viewingSnapshot = null;
+$snapshotQueryId = isset($_GET['snapshot']) ? sanitize_snapshot_id((string) $_GET['snapshot']) : '';
+if ($snapshotQueryId !== '') {
+    $viewingSnapshot = load_snapshot($snapshotQueryId);
+}
+
 $noteFiles = $folderExists ? list_note_files($dir) : [];
 $activeFile = isset($_GET['file']) ? (string) $_GET['file'] : '';
 if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
@@ -219,6 +282,30 @@ $phase1Suggestions = $folderExists
 $phase2Suggestions = $folderExists
     ? load_phase2_suggestions($dir)
     : normalize_phase2_suggestions(null);
+
+// Snapshot view overlays Phase 3 UI without changing app.config.json.
+if ($viewingSnapshot !== null) {
+    $phase = 3;
+    $phase2 = [
+        'organized' => $viewingSnapshot['organized'],
+        'filterLayout' => $viewingSnapshot['filterLayout'],
+        'notebookOrder' => $viewingSnapshot['notebookOrder'],
+        'blame' => $viewingSnapshot['blame'],
+    ];
+    $phase2Suggestions = normalize_phase2_suggestions(null);
+    $sourceFolder = (string) ($viewingSnapshot['sourceFolder'] ?? '');
+    if ($sourceFolder !== '' && is_dir(input_dir($sourceFolder))) {
+        $dir = input_dir($sourceFolder);
+        $noteFiles = list_note_files($dir);
+        if ($activeFile === '' || !in_array($activeFile, $noteFiles, true)) {
+            $activeFile = $noteFiles[0] ?? '';
+        }
+    } else {
+        $noteFiles = [];
+        $activeFile = '';
+    }
+    $folderExists = true;
+}
 
 /**
  * @return array<string, string>
@@ -391,42 +478,104 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
 }
 
 $showEmpty = !$folderExists;
+$snapshotMissing = $snapshotQueryId !== '' && $viewingSnapshot === null;
+$snapshotList = list_snapshots();
+$isSnapshotView = $viewingSnapshot !== null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Scattered Notes Harness</title>
+    <title><?= $isSnapshotView ? 'Snapshot · ' . e((string) $viewingSnapshot['name']) . ' · ' : '' ?>Scattered Notes Harness</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= e(asset_url('assets/app.css')) ?>">
 </head>
-<body>
+<body<?= $isSnapshotView ? ' class="is-snapshot-view"' : '' ?>>
 <header class="app-header">
     <a href="index.php" class="app-header__brand">Scattered Notes</a>
     <div class="app-header__meta">
-        <?php if ($showEmpty): ?>
+        <?php if ($isSnapshotView): ?>
+            snapshot · <?= e((string) $viewingSnapshot['name']) ?>
+            <span class="app-header__meta-sep" aria-hidden="true">·</span>
+            live: <?php if ($liveFolder === ''): ?>no folder<?php else: ?>inputs/<?= e($liveFolder) ?> · phase <?= (int) $livePhase ?><?php endif; ?>
+        <?php elseif ($showEmpty): ?>
             no folder configured
         <?php else: ?>
-            inputs/<?= e($folder) ?> · phase <?= (int) $phase ?>
+            inputs/<?= e($liveFolder) ?> · phase <?= (int) $livePhase ?>
         <?php endif; ?>
     </div>
-    <?php if (!$showEmpty && ($phase === 2 || $phase === 3)): ?>
-        <button type="button"
-                class="app-header__menu"
-                data-drawer-open
-                aria-label="Open original notes"
-                aria-keyshortcuts="B"
-                title="Open original notes (B)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M4 7h16M4 12h16M4 17h16"/>
-            </svg>
-            <span class="shortcut-hint" data-shortcut-hint aria-hidden="true">B</span>
-        </button>
-    <?php endif; ?>
+    <div class="app-header__actions">
+        <?php if (!$isSnapshotView && $liveFolder !== '' && $livePhase === 3 && is_file(input_dir($liveFolder) . '/phase2.json')): ?>
+            <button type="button" class="app-header__btn" data-save-snapshot title="Save Phase 3 as a snapshot">
+                Save snapshot
+            </button>
+        <?php endif; ?>
+        <div class="app-header__snapshots" data-snapshots-menu>
+            <button type="button"
+                    class="app-header__btn"
+                    data-snapshots-toggle
+                    aria-expanded="false"
+                    aria-haspopup="true"
+                    title="Open a saved snapshot">
+                Snapshots<?= $snapshotList !== [] ? ' (' . count($snapshotList) . ')' : '' ?>
+            </button>
+            <div class="app-header__snapshots-panel" data-snapshots-panel hidden>
+                <div class="app-header__snapshots-head">Saved snapshots</div>
+                <?php if ($snapshotList === []): ?>
+                    <p class="app-header__snapshots-empty muted">No snapshots yet. Save one from Phase 3.</p>
+                <?php else: ?>
+                    <ul class="app-header__snapshots-list">
+                        <?php foreach ($snapshotList as $snap): ?>
+                            <li>
+                                <a class="app-header__snapshots-link<?= $isSnapshotView && (string) $viewingSnapshot['id'] === (string) $snap['id'] ? ' is-active' : '' ?>"
+                                   href="index.php?snapshot=<?= e(rawurlencode((string) $snap['id'])) ?>">
+                                    <span class="app-header__snapshots-name"><?= e((string) $snap['name']) ?></span>
+                                    <span class="app-header__snapshots-meta muted">
+                                        <?php if ((string) $snap['sourceFolder'] !== ''): ?>
+                                            inputs/<?= e((string) $snap['sourceFolder']) ?>
+                                        <?php endif; ?>
+                                        <?php if ((string) $snap['createdAt'] !== ''): ?>
+                                            · <?= e((string) $snap['createdAt']) ?>
+                                        <?php endif; ?>
+                                    </span>
+                                </a>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php if ($isSnapshotView): ?>
+            <a class="app-header__btn app-header__btn--link" href="index.php" title="Leave snapshot; keep live phase">Exit snapshot</a>
+        <?php endif; ?>
+        <?php if (!$showEmpty && ($phase === 2 || $phase === 3)): ?>
+            <button type="button"
+                    class="app-header__menu"
+                    data-drawer-open
+                    aria-label="Open original notes"
+                    aria-keyshortcuts="B"
+                    title="Open original notes (B)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4 7h16M4 12h16M4 17h16"/>
+                </svg>
+                <span class="shortcut-hint" data-shortcut-hint aria-hidden="true">B</span>
+            </button>
+        <?php endif; ?>
+    </div>
 </header>
+
+<?php if ($snapshotMissing): ?>
+<aside class="banner banner--warn">
+    <h2>Snapshot not found</h2>
+    <p>
+        No file for <code>snapshots/<?= e($snapshotQueryId) ?>.json</code>.
+        <a href="index.php">Back to live session</a> (phase unchanged).
+    </p>
+</aside>
+<?php endif; ?>
 
 <details class="adhd-about">
     <summary>ADHD — what this is for</summary>
@@ -826,13 +975,32 @@ $showEmpty = !$folderExists;
         ['label' => 'Articles', 'count' => count($articles), 'key' => 'articleCandidates'],
     ], 'Note counts by section');
     ?>
-    <?php if ($phase === 3): ?>
+    <?php if ($isSnapshotView): ?>
+    <aside class="banner banner--snapshot">
+        <h2>Snapshot — <?= e((string) $viewingSnapshot['name']) ?></h2>
+        <p>
+            Read-only view of a saved Phase 3. Filter + Copy (and Notebook) work here.
+            Your live session stays at
+            <?php if ($liveFolder === ''): ?>
+                no folder selected
+            <?php else: ?>
+                <code>inputs/<?= e($liveFolder) ?></code> · phase <?= (int) $livePhase ?>
+            <?php endif; ?>
+            — refreshing without <code>?snapshot=</code> returns there. Nothing here writes <code>app.config.json</code>.
+        </p>
+        <ul>
+            <li>Saved file: <code>snapshots/<?= e((string) $viewingSnapshot['id']) ?>.json</code><?php if ((string) ($viewingSnapshot['createdAt'] ?? '') !== ''): ?> · <?= e((string) $viewingSnapshot['createdAt']) ?><?php endif; ?></li>
+            <li><a href="index.php">Exit snapshot</a> to resume the live phase.</li>
+        </ul>
+    </aside>
+    <?php elseif ($phase === 3): ?>
     <aside class="banner">
         <h2>Phase 3 — locked in</h2>
         <p>
             Review is finished: no Suggest notes and no green-check marking in this phase.
             Use <strong>Panels</strong> to filter by tag and Copy, or switch to <strong>Notebook</strong> for an UpNote-style sidebar of filter groups → notebooks.
             You can still tweak tags, move items, and rearrange. Use the hamburger for original notes with per-line accounting.
+            <strong>Save snapshot</strong> stores this Phase 3 under <code>snapshots/</code> so you can reopen it anytime without changing your live phase.
         </p>
         <ul>
             <li>Filter + Copy (Panels) or open a notebook and Copy compiled notes — paste into your own notes app.</li>
@@ -868,7 +1036,13 @@ $showEmpty = !$folderExists;
     </aside>
     <?php endif; ?>
 
-    <main class="main organized" data-phase2-root data-phase="<?= (int) $phase ?>">
+    <main class="main organized"
+          data-phase2-root
+          data-phase="<?= (int) $phase ?>"
+          <?php if ($isSnapshotView): ?>
+          data-snapshot-id="<?= e((string) $viewingSnapshot['id']) ?>"
+          data-snapshot-readonly="1"
+          <?php endif; ?>>
         <?php if ($phase2 === null): ?>
             <p class="muted">
                 <code>phase2.json</code> is missing. Return to Cursor / Claude Code and ask the skill to run Phase 2.
