@@ -64,6 +64,145 @@ code {
   z-index: 20;
 }
 
+.app-header__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app-header__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.app-header__btn:hover,
+.app-header__btn--link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app-header__btn--link {
+  color: inherit;
+}
+
+.app-header__meta-sep {
+  margin: 0 0.15rem;
+  opacity: 0.55;
+}
+
+.app-header__snapshots {
+  position: relative;
+}
+
+.app-header__snapshots-panel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 40;
+  width: min(22rem, calc(100vw - 1.5rem));
+  max-height: min(24rem, 70vh);
+  overflow: auto;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.app-header__snapshots-head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 0.45rem;
+}
+
+.app-header__snapshots-empty {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.app-header__snapshots-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.app-header__snapshots-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-header__snapshots-link:hover,
+.app-header__snapshots-link.is-active {
+  background: var(--bg-elevated);
+}
+
+.app-header__snapshots-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.app-header__snapshots-meta {
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+
+.banner--snapshot {
+  border-color: var(--accent);
+  background: rgba(110, 181, 255, 0.08);
+}
+
+.banner--warn {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+body.is-snapshot-view .item-card__actions,
+body.is-snapshot-view .item-card__more,
+body.is-snapshot-view .section-block__rearrange,
+body.is-snapshot-view .notebook__rearrange,
+body.is-snapshot-view .tag-filter__heading.is-placeholder {
+  display: none !important;
+}
+
+body.is-snapshot-view .tag-filter__chip {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+body.is-snapshot-view .notebook-nav {
+  -webkit-user-drag: none;
+  user-drag: none;
+  cursor: pointer;
+}
+
 .app-header__menu {
   position: relative;
   display: inline-flex;
@@ -125,10 +264,10 @@ body.is-showing-shortcuts .app-header__menu > svg {
 }
 
 .app-header__meta {
-  margin-left: auto;
   color: var(--ink-muted);
   font-size: 0.85rem;
   font-family: var(--mono);
+  min-width: 0;
 }
 
 .adhd-about {
@@ -2773,6 +2912,15 @@ body:has(.organized.is-notebook-mode) .bucket-counts {
   font-size: 0.88rem;
   text-align: left;
   cursor: pointer;
+  position: relative;
+}
+
+.notebook-nav[draggable="true"] {
+  cursor: grab;
+}
+
+.notebook-nav[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .notebook-nav:hover {
@@ -2785,11 +2933,50 @@ body:has(.organized.is-notebook-mode) .bucket-counts {
   color: #fff;
 }
 
+.notebook-nav.is-dragging {
+  opacity: 0.35;
+}
+
+.notebook-nav.is-drop-before::before,
+.notebook-nav.is-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.notebook-nav.is-drop-before::before {
+  top: -1px;
+}
+
+.notebook-nav.is-drop-after::after {
+  bottom: -1px;
+}
+
+.notebook-folder.is-drop-target > .notebook-folder__head {
+  background: rgba(110, 181, 255, 0.16);
+  outline: 1px solid rgba(110, 181, 255, 0.45);
+  outline-offset: -1px;
+}
+
+.notebook-folder.is-drop-target > .notebook-folder__list:empty,
+.notebook__folders.is-reordering-notebooks .notebook-folder.is-drop-target > .notebook-folder__list {
+  min-height: 0.35rem;
+}
+
 .notebook-nav.is-disabled {
   opacity: 0.48;
   font-style: italic;
   color: var(--ink-muted);
   cursor: not-allowed;
+}
+
+.notebook-nav.is-disabled[draggable="true"] {
+  cursor: grab;
 }
 
 .notebook-nav.is-disabled:hover {

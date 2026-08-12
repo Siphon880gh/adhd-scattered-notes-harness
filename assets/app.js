@@ -512,6 +512,9 @@
   var reviewLocked = phase2Root
     ? String(phase2Root.getAttribute("data-phase") || "") === "3"
     : false;
+  var snapshotReadonly = phase2Root
+    ? phase2Root.getAttribute("data-snapshot-readonly") === "1"
+    : false;
   var BUCKET_LABELS = {
     tasks: "Scattered",
     reference: "Reference",
@@ -611,7 +614,7 @@
   }
 
   function saveOrganized() {
-    if (!organizedState) return;
+    if (!organizedState || snapshotReadonly) return;
     syncFilterLayout();
     fetch("index.php?action=save-phase2", {
       method: "POST",
@@ -627,6 +630,7 @@
   }
 
   function scheduleSave() {
+    if (snapshotReadonly) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(saveOrganized, 200);
   }
@@ -798,6 +802,11 @@
     note: null,
     didReorder: false,
   };
+  var notebookTagDrag = {
+    tag: "",
+    fromGroup: -1,
+    didDrag: false,
+  };
 
   function notebookFolderLabel(heading, untitledIndex) {
     var name = String(heading || "").trim();
@@ -885,6 +894,8 @@
             ? "No task notes in this notebook"
             : "No non-task notes in this notebook"
         );
+      } else if (!snapshotReadonly && btn.draggable) {
+        btn.setAttribute("title", "Drag to another folder to regroup");
       } else {
         btn.removeAttribute("title");
       }
@@ -1281,6 +1292,11 @@
         btn.className = "notebook-nav";
         btn.setAttribute("data-notebook-tag", tag);
         btn.setAttribute("data-notebook-folder-label", labelInfo.text);
+        btn.setAttribute("data-notebook-group", String(gIndex));
+        btn.draggable = !snapshotReadonly;
+        if (!snapshotReadonly) {
+          btn.setAttribute("title", "Drag to another folder to regroup");
+        }
         btn.innerHTML =
           '<svg class="notebook-nav__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' +
           '<span class="notebook-nav__label"></span>' +
@@ -1720,6 +1736,98 @@
     }
   }
 
+  function clearNotebookTagDropIndicators() {
+    if (!notebookFoldersEl) return;
+    qsa(".notebook-folder.is-drop-target, .notebook-nav.is-drop-before, .notebook-nav.is-drop-after", notebookFoldersEl).forEach(function (el) {
+      el.classList.remove("is-drop-target", "is-drop-before", "is-drop-after");
+    });
+  }
+
+  function getNotebookTagInsertIndex(folderEl, clientY) {
+    var list = qs(".notebook-folder__list", folderEl);
+    if (!list) return 0;
+    var items = qsa(".notebook-nav[data-notebook-tag]:not(.is-dragging)", list);
+    for (var i = 0; i < items.length; i++) {
+      var box = items[i].getBoundingClientRect();
+      if (clientY < box.top + box.height / 2) return i;
+    }
+    return items.length;
+  }
+
+  function resolveNotebookTagDrop(clientY, targetEl) {
+    if (!targetEl || !notebookFoldersEl) return null;
+    var folder = targetEl.closest(".notebook-folder");
+    if (!folder || !notebookFoldersEl.contains(folder)) return null;
+    var groupIndex = parseInt(folder.getAttribute("data-notebook-folder") || "-1", 10);
+    if (isNaN(groupIndex) || groupIndex < 0) return null;
+
+    var onHead = !!targetEl.closest(".notebook-folder__head");
+    var insertAt;
+    if (onHead || folder.classList.contains("is-collapsed")) {
+      var list = qs(".notebook-folder__list", folder);
+      insertAt = list
+        ? qsa(".notebook-nav[data-notebook-tag]:not(.is-dragging)", list).length
+        : 0;
+    } else {
+      insertAt = getNotebookTagInsertIndex(folder, clientY);
+    }
+    return { groupIndex: groupIndex, insertAt: insertAt, folder: folder };
+  }
+
+  function moveNotebookTag(tagName, toGroupIndex, insertAt) {
+    if (snapshotReadonly) return false;
+    var tagKey = String(tagName || "").trim().toLowerCase();
+    if (!tagKey) return false;
+
+    syncFilterLayout();
+    var parsed = parseFilterGroups(filterLayoutState, null);
+    var groups = parsed.groups.map(function (group) {
+      return {
+        heading: group.heading,
+        tags: group.tags.slice(),
+      };
+    });
+
+    var fromGroup = -1;
+    var fromIndex = -1;
+    var tagCanonical = tagName;
+    for (var g = 0; g < groups.length; g++) {
+      for (var t = 0; t < groups[g].tags.length; t++) {
+        if (String(groups[g].tags[t]).toLowerCase() === tagKey) {
+          fromGroup = g;
+          fromIndex = t;
+          tagCanonical = groups[g].tags[t];
+          break;
+        }
+      }
+      if (fromGroup >= 0) break;
+    }
+    if (fromGroup < 0) return false;
+    if (toGroupIndex < 0 || toGroupIndex >= groups.length) return false;
+
+    var insert = Math.max(0, Math.min(insertAt, groups[toGroupIndex].tags.length));
+    if (fromGroup === toGroupIndex) {
+      if (insert === fromIndex || insert === fromIndex + 1) {
+        return false;
+      }
+      groups[fromGroup].tags.splice(fromIndex, 1);
+      if (insert > fromIndex) insert -= 1;
+      groups[toGroupIndex].tags.splice(insert, 0, tagCanonical);
+    } else {
+      groups[fromGroup].tags.splice(fromIndex, 1);
+      insert = Math.max(0, Math.min(insert, groups[toGroupIndex].tags.length));
+      groups[toGroupIndex].tags.splice(insert, 0, tagCanonical);
+      if (!groups[fromGroup].tags.length) {
+        groups.splice(fromGroup, 1);
+      }
+    }
+
+    filterLayoutState = layoutFromFilterGroups(groups);
+    rebuildFilterBar();
+    scheduleSave();
+    return true;
+  }
+
   function moveFilterItem(fromIndex, toIndex) {
     if (fromIndex < 0 || fromIndex >= filterLayoutState.length) return;
     var item = filterLayoutState[fromIndex];
@@ -1871,9 +1979,10 @@
       headingBtn.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation();
+        if (snapshotReadonly) return;
         editFilterGroupHeading(gIndex, headingValue);
       });
-      if (!currentClusterHeading) {
+      if (!currentClusterHeading && !snapshotReadonly) {
         headingRow.addEventListener("click", function (e) {
           if (e.target.closest(".tag-filter__heading")) return;
           e.preventDefault();
@@ -1883,7 +1992,7 @@
       }
       headingRow.appendChild(headingBtn);
 
-      if (currentClusterHeading) {
+      if (currentClusterHeading && !snapshotReadonly) {
         var clearBtn = document.createElement("button");
         clearBtn.type = "button";
         clearBtn.className = "tag-filter__heading-clear";
@@ -1923,10 +2032,11 @@
         divider.setAttribute("data-filter-index", String(index));
         divider.setAttribute("title", "Drag to reorder · click to remove");
         divider.setAttribute("aria-label", "Divider: drag to reorder, click to remove");
-        divider.draggable = true;
+        divider.draggable = !snapshotReadonly;
         divider.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
+          if (snapshotReadonly) return;
           if (filterDrag.didDrag) {
             filterDrag.didDrag = false;
             return;
@@ -1949,7 +2059,7 @@
       group.setAttribute("data-filter-tag", item.name);
       group.setAttribute("role", "button");
       group.setAttribute("tabindex", "0");
-      group.draggable = true;
+      group.draggable = !snapshotReadonly;
 
       var btn = document.createElement("span");
       btn.className = "tag-filter__chip";
@@ -1981,6 +2091,8 @@
         }
       });
 
+      group.appendChild(btn);
+      if (!snapshotReadonly) {
       var menuWrap = document.createElement("div");
       menuWrap.className = "tag-filter__menu-wrap";
       menuWrap.setAttribute("data-filter-menu-wrap", "");
@@ -2096,8 +2208,8 @@
 
       menuWrap.appendChild(menuToggle);
       menuWrap.appendChild(menu);
-      group.appendChild(btn);
       group.appendChild(menuWrap);
+      }
       clusterBody.appendChild(group);
     });
 
@@ -2513,6 +2625,10 @@
 
       var notebookNav = e.target.closest(".notebook-nav[data-notebook-tag]");
       if (notebookNav) {
+        if (notebookTagDrag.didDrag) {
+          notebookTagDrag.didDrag = false;
+          return;
+        }
         var navTag = notebookNav.getAttribute("data-notebook-tag") || "";
         if (
           notebookNav.classList.contains("is-disabled") ||
@@ -2753,6 +2869,12 @@
         e.preventDefault();
         return;
       }
+      if (snapshotReadonly) {
+        if (e.target.closest(".notebook-nav[data-notebook-tag]")) {
+          e.preventDefault();
+          return;
+        }
+      }
       var filterItem = e.target.closest(
         ".tag-filter__group[data-filter-index], .tag-filter__divider[data-filter-index]"
       );
@@ -2774,6 +2896,35 @@
             "text/plain",
             filterItem.getAttribute("data-filter-tag") || "divider"
           );
+        }
+        return;
+      }
+
+      var notebookNavDrag = e.target.closest(".notebook-nav[data-notebook-tag]");
+      if (notebookNavDrag) {
+        if (snapshotReadonly) {
+          e.preventDefault();
+          return;
+        }
+        var dragTag = notebookNavDrag.getAttribute("data-notebook-tag") || "";
+        var dragGroup = parseInt(
+          notebookNavDrag.getAttribute("data-notebook-group") || "-1",
+          10
+        );
+        if (!dragTag) {
+          e.preventDefault();
+          return;
+        }
+        notebookTagDrag.tag = dragTag;
+        notebookTagDrag.fromGroup = isNaN(dragGroup) ? -1 : dragGroup;
+        notebookTagDrag.didDrag = false;
+        notebookNavDrag.classList.add("is-dragging");
+        if (notebookFoldersEl) {
+          notebookFoldersEl.classList.add("is-reordering-notebooks");
+        }
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", dragTag);
         }
         return;
       }
@@ -2826,6 +2977,34 @@
           el.classList.toggle("is-drop-before", at === dropIndex);
         });
         filterBar.classList.toggle("is-drop-end", dropIndex === filterLayoutState.length);
+        return;
+      }
+
+      if (notebookTagDrag.tag) {
+        var dropInfo = resolveNotebookTagDrop(e.clientY, e.target);
+        if (!dropInfo) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        notebookTagDrag.didDrag = true;
+        if (dropInfo.folder.classList.contains("is-collapsed")) {
+          dropInfo.folder.classList.remove("is-collapsed");
+          var expandToggle = qs(".notebook-folder__toggle", dropInfo.folder);
+          if (expandToggle) expandToggle.setAttribute("aria-expanded", "true");
+        }
+        clearNotebookTagDropIndicators();
+        dropInfo.folder.classList.add("is-drop-target");
+        var dropList = qs(".notebook-folder__list", dropInfo.folder);
+        if (dropList) {
+          var dropNavs = qsa(
+            ".notebook-nav[data-notebook-tag]:not(.is-dragging)",
+            dropList
+          );
+          if (dropInfo.insertAt < dropNavs.length) {
+            dropNavs[dropInfo.insertAt].classList.add("is-drop-before");
+          } else if (dropNavs.length) {
+            dropNavs[dropNavs.length - 1].classList.add("is-drop-after");
+          }
+        }
         return;
       }
 
@@ -2884,6 +3063,24 @@
         return;
       }
 
+      if (notebookTagDrag.tag) {
+        var tagDrop = resolveNotebookTagDrop(e.clientY, e.target);
+        var movedTag = notebookTagDrag.tag;
+        notebookTagDrag.tag = "";
+        notebookTagDrag.fromGroup = -1;
+        clearNotebookTagDropIndicators();
+        if (notebookFoldersEl) {
+          notebookFoldersEl.classList.remove("is-reordering-notebooks");
+        }
+        qsa(".notebook-nav.is-dragging", notebookFoldersEl || phase2Root).forEach(function (el) {
+          el.classList.remove("is-dragging");
+        });
+        if (!tagDrop) return;
+        e.preventDefault();
+        moveNotebookTag(movedTag, tagDrop.groupIndex, tagDrop.insertAt);
+        return;
+      }
+
       if (notebookDrag.note) {
         e.preventDefault();
         var settleNotebookNote = notebookDrag.note;
@@ -2910,6 +3107,22 @@
         filterDrag.index = -1;
         setTimeout(function () {
           filterDrag.didDrag = false;
+        }, 0);
+        return;
+      }
+
+      if (notebookTagDrag.tag || notebookFoldersEl && notebookFoldersEl.classList.contains("is-reordering-notebooks")) {
+        clearNotebookTagDropIndicators();
+        if (notebookFoldersEl) {
+          notebookFoldersEl.classList.remove("is-reordering-notebooks");
+        }
+        qsa(".notebook-nav.is-dragging", notebookFoldersEl || phase2Root).forEach(function (el) {
+          el.classList.remove("is-dragging");
+        });
+        notebookTagDrag.tag = "";
+        notebookTagDrag.fromGroup = -1;
+        setTimeout(function () {
+          notebookTagDrag.didDrag = false;
         }, 0);
         return;
       }
@@ -3289,5 +3502,92 @@
         closePhase1SuggestPanels();
       }
     });
+  })();
+
+  // --- Phase 3 snapshots ---
+  (function initSnapshots() {
+    var menu = qs("[data-snapshots-menu]");
+    var toggle = qs("[data-snapshots-toggle]");
+    var panel = qs("[data-snapshots-panel]");
+    var saveBtn = qs("[data-save-snapshot]");
+    var toastEl = qs("[data-app-toast]");
+    var toastTimer = null;
+
+    function showToast(message) {
+      if (!toastEl) return;
+      toastEl.textContent = message || "";
+      toastEl.hidden = !message;
+      if (toastTimer) clearTimeout(toastTimer);
+      if (!message) return;
+      toastTimer = setTimeout(function () {
+        toastEl.hidden = true;
+        toastEl.textContent = "";
+      }, 3200);
+    }
+
+    function setSnapshotsOpen(open) {
+      if (!toggle || !panel) return;
+      panel.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    if (toggle && panel) {
+      toggle.addEventListener("click", function (e) {
+        e.stopPropagation();
+        setSnapshotsOpen(panel.hidden);
+      });
+      document.addEventListener("click", function (e) {
+        if (!menu || !e.target.closest("[data-snapshots-menu]")) {
+          setSnapshotsOpen(false);
+        }
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") setSnapshotsOpen(false);
+      });
+    }
+
+    if (saveBtn) {
+      saveBtn.addEventListener("click", function () {
+        var defaultName = "";
+        var meta = qs(".app-header__meta");
+        if (meta) {
+          var m = meta.textContent.match(/inputs\/([^\s·]+)/);
+          if (m) defaultName = m[1];
+        }
+        var name = window.prompt("Snapshot name (optional)", defaultName || "");
+        if (name === null) return;
+        saveBtn.disabled = true;
+        fetch("index.php?action=save-snapshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: String(name || "").trim() }),
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { ok: res.ok, data: data };
+            });
+          })
+          .then(function (result) {
+            if (!result.ok || !result.data || !result.data.ok) {
+              throw new Error(
+                (result.data && result.data.error) || "Save failed"
+              );
+            }
+            var snap = result.data.snapshot || {};
+            showToast(
+              "Saved " + (snap.path || "snapshot") + " — open anytime via Snapshots"
+            );
+            window.setTimeout(function () {
+              window.location.reload();
+            }, 700);
+          })
+          .catch(function (err) {
+            showToast(err && err.message ? err.message : "Save failed");
+          })
+          .then(function () {
+            saveBtn.disabled = false;
+          });
+      });
+    }
   })();
 })();
