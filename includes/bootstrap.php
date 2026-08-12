@@ -1296,9 +1296,18 @@ function save_phase3_snapshot(string $sourceFolder, array $phase2, string $name 
 
     $label = trim($name);
     if ($label === '') {
-        $label = $sourceFolder;
+        return ['ok' => false, 'error' => 'Enter a snapshot name.'];
     }
     $label = mb_substr($label, 0, 80);
+    $labelKey = strtolower($label);
+    foreach (list_snapshots() as $existingSnap) {
+        if (strtolower((string) ($existingSnap['name'] ?? '')) === $labelKey) {
+            return [
+                'ok' => false,
+                'error' => 'A snapshot named "' . $label . '" already exists. Choose a different name.',
+            ];
+        }
+    }
 
     $stamp = gmdate('Ymd-His');
     $folderSlug = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $sourceFolder) ?? 'folder';
@@ -1346,6 +1355,83 @@ function save_phase3_snapshot(string $sourceFolder, array $phase2, string $name 
             'sourceFolder' => $sourceFolder,
             'createdAt' => $createdAt,
             'path' => 'snapshots/' . $id . '.json',
+        ],
+    ];
+}
+
+/**
+ * Update an existing snapshot's organized / filterLayout / notebookOrder.
+ * Does not touch app.config.json or live phase2.json.
+ *
+ * @param array<string, mixed> $phase2
+ * @return array{ok: bool, error?: string, snapshot?: array{id: string, name: string, sourceFolder: string, createdAt: string, path: string}}
+ */
+function update_snapshot(string $id, array $phase2): array
+{
+    $safe = sanitize_snapshot_id($id);
+    if ($safe === '') {
+        return ['ok' => false, 'error' => 'Invalid snapshot id.'];
+    }
+    $path = snapshot_path($safe);
+    if ($path === '' || !is_file($path)) {
+        return ['ok' => false, 'error' => 'Snapshot not found.'];
+    }
+
+    $existing = load_json_file($path);
+    if ($existing === null) {
+        return ['ok' => false, 'error' => 'Could not read snapshot file.'];
+    }
+
+    $organized = normalize_organized(
+        is_array($phase2['organized'] ?? null) ? $phase2['organized'] : []
+    );
+    $availableTags = collect_organized_tags($organized);
+    $filterLayout = normalize_filter_layout(
+        is_array($phase2['filterLayout'] ?? null) ? $phase2['filterLayout'] : [],
+        $availableTags
+    );
+    $notebookOrder = normalize_notebook_order(
+        $phase2['notebookOrder'] ?? [],
+        $organized
+    );
+
+    $name = trim((string) ($existing['name'] ?? ''));
+    $sourceFolder = trim((string) ($existing['sourceFolder'] ?? ''));
+    $createdAt = trim((string) ($existing['createdAt'] ?? ''));
+    if ($name === '') {
+        $name = $sourceFolder !== '' ? $sourceFolder : $safe;
+    }
+    if ($createdAt === '') {
+        $createdAt = gmdate('c');
+    }
+    $blame = is_array($existing['blame'] ?? null) ? $existing['blame'] : [];
+    if (array_key_exists('blame', $phase2) && is_array($phase2['blame'])) {
+        $blame = $phase2['blame'];
+    }
+
+    $payload = [
+        'id' => $safe,
+        'name' => $name,
+        'sourceFolder' => $sourceFolder,
+        'createdAt' => $createdAt,
+        'organized' => $organized,
+        'filterLayout' => $filterLayout,
+        'notebookOrder' => $notebookOrder === [] ? new \stdClass() : $notebookOrder,
+        'blame' => $blame,
+    ];
+
+    if (!save_json_file($path, $payload)) {
+        return ['ok' => false, 'error' => 'Could not write snapshot file.'];
+    }
+
+    return [
+        'ok' => true,
+        'snapshot' => [
+            'id' => $safe,
+            'name' => $name,
+            'sourceFolder' => $sourceFolder,
+            'createdAt' => $createdAt,
+            'path' => 'snapshots/' . $safe . '.json',
         ],
     ];
 }

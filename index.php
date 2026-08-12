@@ -235,8 +235,53 @@ if (
 
     $result = save_phase3_snapshot($folder, $existing, $name);
     if (empty($result['ok'])) {
-        http_response_code(500);
-        echo json_encode(['ok' => false, 'error' => (string) ($result['error'] ?? 'Could not save snapshot.')]);
+        $error = (string) ($result['error'] ?? 'Could not save snapshot.');
+        $isConflict = stripos($error, 'already exists') !== false
+            || stripos($error, 'Enter a snapshot name') !== false;
+        http_response_code($isConflict ? 400 : 500);
+        echo json_encode(['ok' => false, 'error' => $error]);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'snapshot' => $result['snapshot'],
+    ]);
+    exit;
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'update-snapshot'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload) || !isset($payload['organized']) || !is_array($payload['organized'])) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with organized.']);
+        exit;
+    }
+
+    $snapshotId = '';
+    if (isset($payload['id'])) {
+        $snapshotId = sanitize_snapshot_id((string) $payload['id']);
+    }
+    if ($snapshotId === '' && isset($_GET['id'])) {
+        $snapshotId = sanitize_snapshot_id((string) $_GET['id']);
+    }
+    if ($snapshotId === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Missing snapshot id.']);
+        exit;
+    }
+
+    $result = update_snapshot($snapshotId, $payload);
+    if (empty($result['ok'])) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => (string) ($result['error'] ?? 'Could not update snapshot.')]);
         exit;
     }
 
@@ -509,8 +554,8 @@ $isSnapshotView = $viewingSnapshot !== null;
     </div>
     <div class="app-header__actions">
         <?php if (!$isSnapshotView && $liveFolder !== '' && $livePhase === 3 && is_file(input_dir($liveFolder) . '/phase2.json')): ?>
-            <button type="button" class="app-header__btn" data-save-snapshot title="Save Phase 3 as a snapshot">
-                Save snapshot
+            <button type="button" class="app-header__btn" data-save-snapshot title="Save Phase 3 as a named snapshot">
+                Save snapshot as
             </button>
         <?php endif; ?>
         <div class="app-header__snapshots" data-snapshots-menu>
@@ -979,8 +1024,8 @@ $isSnapshotView = $viewingSnapshot !== null;
     <aside class="banner banner--snapshot">
         <h2>Snapshot — <?= e((string) $viewingSnapshot['name']) ?></h2>
         <p>
-            Read-only view of a saved Phase 3. Filter + Copy (and Notebook) work here.
-            Your live session stays at
+            Saved Phase 3 view. Filter + Copy and Notebook work here — including dragging notebooks between folders
+            (same as live Phase 3). Regroup edits save into this snapshot file only; your live session stays at
             <?php if ($liveFolder === ''): ?>
                 no folder selected
             <?php else: ?>
@@ -1000,7 +1045,7 @@ $isSnapshotView = $viewingSnapshot !== null;
             Review is finished: no Suggest notes and no green-check marking in this phase.
             Use <strong>Panels</strong> to filter by tag and Copy, or switch to <strong>Notebook</strong> for an UpNote-style sidebar of filter groups → notebooks.
             You can still tweak tags, move items, and rearrange. Use the hamburger for original notes with per-line accounting.
-            <strong>Save snapshot</strong> stores this Phase 3 under <code>snapshots/</code> so you can reopen it anytime without changing your live phase.
+            <strong>Save snapshot as</strong> stores this Phase 3 under <code>snapshots/</code> so you can reopen it anytime without changing your live phase.
         </p>
         <ul>
             <li>Filter + Copy (Panels) or open a notebook and Copy compiled notes — paste into your own notes app.</li>

@@ -187,20 +187,8 @@ code {
 body.is-snapshot-view .item-card__actions,
 body.is-snapshot-view .item-card__more,
 body.is-snapshot-view .section-block__rearrange,
-body.is-snapshot-view .notebook__rearrange,
-body.is-snapshot-view .tag-filter__heading.is-placeholder {
+body.is-snapshot-view .notebook__rearrange {
   display: none !important;
-}
-
-body.is-snapshot-view .tag-filter__chip {
-  -webkit-user-drag: none;
-  user-drag: none;
-}
-
-body.is-snapshot-view .notebook-nav {
-  -webkit-user-drag: none;
-  user-drag: none;
-  cursor: pointer;
 }
 
 .app-header__menu {
@@ -2619,6 +2607,7 @@ body.is-showing-shortcuts .app-header__menu > svg {
   background: var(--bg-panel);
   color: var(--ink);
   font-size: 0.9rem;
+  font-weight: 600;
   line-height: 1.4;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
   opacity: 0;
@@ -2630,6 +2619,12 @@ body.is-showing-shortcuts .app-header__menu > svg {
 .app-toast.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.app-toast.is-saved {
+  border-color: rgba(61, 214, 140, 0.55);
+  background: rgba(61, 214, 140, 0.12);
+  color: var(--added);
 }
 
 .app-toast[hidden] {

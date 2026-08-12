@@ -515,6 +515,10 @@
   var snapshotReadonly = phase2Root
     ? phase2Root.getAttribute("data-snapshot-readonly") === "1"
     : false;
+  var snapshotId = phase2Root
+    ? String(phase2Root.getAttribute("data-snapshot-id") || "").trim()
+    : "";
+  var isSnapshotView = snapshotId !== "";
   var BUCKET_LABELS = {
     tasks: "Scattered",
     reference: "Reference",
@@ -614,23 +618,43 @@
   }
 
   function saveOrganized() {
-    if (!organizedState || snapshotReadonly) return;
+    if (!organizedState) return;
     syncFilterLayout();
-    fetch("index.php?action=save-phase2", {
+    var body = JSON.stringify({
+      organized: organizedState,
+      filterLayout: filterLayoutState,
+      notebookOrder: notebookOrderState,
+      id: isSnapshotView ? snapshotId : undefined,
+    });
+    var url = isSnapshotView
+      ? "index.php?action=update-snapshot"
+      : "index.php?action=save-phase2";
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        organized: organizedState,
-        filterLayout: filterLayoutState,
-        notebookOrder: notebookOrderState,
-      }),
-    }).catch(function () {
-      // local save failure — UI state still updated
-    });
+      body: body,
+    })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          return { ok: res.ok, data: data };
+        });
+      })
+      .then(function (result) {
+        if (!result.ok || !result.data || !result.data.ok) {
+          throw new Error(
+            (result.data && result.data.error) || "Save failed"
+          );
+        }
+        showAppToast(isSnapshotView ? "Saved to snapshot" : "Saved", {
+          saved: true,
+        });
+      })
+      .catch(function (err) {
+        showAppToast(err && err.message ? err.message : "Save failed");
+      });
   }
 
   function scheduleSave() {
-    if (snapshotReadonly) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(saveOrganized, 200);
   }
@@ -894,7 +918,7 @@
             ? "No task notes in this notebook"
             : "No non-task notes in this notebook"
         );
-      } else if (!snapshotReadonly && btn.draggable) {
+      } else if (btn.draggable) {
         btn.setAttribute("title", "Drag to another folder to regroup");
       } else {
         btn.removeAttribute("title");
@@ -904,7 +928,7 @@
 
   var appToastTimer = null;
 
-  function showAppToast(message) {
+  function showAppToast(message, opts) {
     var toast = qs("[data-app-toast]");
     if (!toast) {
       toast = document.createElement("div");
@@ -914,16 +938,19 @@
       toast.setAttribute("aria-live", "polite");
       document.body.appendChild(toast);
     }
+    var isSaved = !!(opts && opts.saved);
     toast.textContent = message;
     toast.hidden = false;
+    toast.classList.toggle("is-saved", isSaved);
     toast.classList.add("is-visible");
     if (appToastTimer) clearTimeout(appToastTimer);
     appToastTimer = setTimeout(function () {
       toast.classList.remove("is-visible");
       appToastTimer = setTimeout(function () {
         toast.hidden = true;
+        toast.classList.remove("is-saved");
       }, 220);
-    }, 2800);
+    }, isSaved ? 1600 : 2800);
   }
 
   function showNotebookKindEmptyToast(tagName) {
@@ -1293,10 +1320,8 @@
         btn.setAttribute("data-notebook-tag", tag);
         btn.setAttribute("data-notebook-folder-label", labelInfo.text);
         btn.setAttribute("data-notebook-group", String(gIndex));
-        btn.draggable = !snapshotReadonly;
-        if (!snapshotReadonly) {
-          btn.setAttribute("title", "Drag to another folder to regroup");
-        }
+        btn.draggable = true;
+        btn.setAttribute("title", "Drag to another folder to regroup");
         btn.innerHTML =
           '<svg class="notebook-nav__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' +
           '<span class="notebook-nav__label"></span>' +
@@ -1775,7 +1800,6 @@
   }
 
   function moveNotebookTag(tagName, toGroupIndex, insertAt) {
-    if (snapshotReadonly) return false;
     var tagKey = String(tagName || "").trim().toLowerCase();
     if (!tagKey) return false;
 
@@ -1979,10 +2003,9 @@
       headingBtn.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation();
-        if (snapshotReadonly) return;
         editFilterGroupHeading(gIndex, headingValue);
       });
-      if (!currentClusterHeading && !snapshotReadonly) {
+      if (!currentClusterHeading) {
         headingRow.addEventListener("click", function (e) {
           if (e.target.closest(".tag-filter__heading")) return;
           e.preventDefault();
@@ -1992,7 +2015,7 @@
       }
       headingRow.appendChild(headingBtn);
 
-      if (currentClusterHeading && !snapshotReadonly) {
+      if (currentClusterHeading) {
         var clearBtn = document.createElement("button");
         clearBtn.type = "button";
         clearBtn.className = "tag-filter__heading-clear";
@@ -2032,11 +2055,10 @@
         divider.setAttribute("data-filter-index", String(index));
         divider.setAttribute("title", "Drag to reorder · click to remove");
         divider.setAttribute("aria-label", "Divider: drag to reorder, click to remove");
-        divider.draggable = !snapshotReadonly;
+        divider.draggable = true;
         divider.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          if (snapshotReadonly) return;
           if (filterDrag.didDrag) {
             filterDrag.didDrag = false;
             return;
@@ -2059,7 +2081,7 @@
       group.setAttribute("data-filter-tag", item.name);
       group.setAttribute("role", "button");
       group.setAttribute("tabindex", "0");
-      group.draggable = !snapshotReadonly;
+      group.draggable = true;
 
       var btn = document.createElement("span");
       btn.className = "tag-filter__chip";
@@ -2092,7 +2114,6 @@
       });
 
       group.appendChild(btn);
-      if (!snapshotReadonly) {
       var menuWrap = document.createElement("div");
       menuWrap.className = "tag-filter__menu-wrap";
       menuWrap.setAttribute("data-filter-menu-wrap", "");
@@ -2209,7 +2230,6 @@
       menuWrap.appendChild(menuToggle);
       menuWrap.appendChild(menu);
       group.appendChild(menuWrap);
-      }
       clusterBody.appendChild(group);
     });
 
@@ -2869,12 +2889,6 @@
         e.preventDefault();
         return;
       }
-      if (snapshotReadonly) {
-        if (e.target.closest(".notebook-nav[data-notebook-tag]")) {
-          e.preventDefault();
-          return;
-        }
-      }
       var filterItem = e.target.closest(
         ".tag-filter__group[data-filter-index], .tag-filter__divider[data-filter-index]"
       );
@@ -2902,10 +2916,6 @@
 
       var notebookNavDrag = e.target.closest(".notebook-nav[data-notebook-tag]");
       if (notebookNavDrag) {
-        if (snapshotReadonly) {
-          e.preventDefault();
-          return;
-        }
         var dragTag = notebookNavDrag.getAttribute("data-notebook-tag") || "";
         var dragGroup = parseInt(
           notebookNavDrag.getAttribute("data-notebook-group") || "-1",
@@ -3510,20 +3520,6 @@
     var toggle = qs("[data-snapshots-toggle]");
     var panel = qs("[data-snapshots-panel]");
     var saveBtn = qs("[data-save-snapshot]");
-    var toastEl = qs("[data-app-toast]");
-    var toastTimer = null;
-
-    function showToast(message) {
-      if (!toastEl) return;
-      toastEl.textContent = message || "";
-      toastEl.hidden = !message;
-      if (toastTimer) clearTimeout(toastTimer);
-      if (!message) return;
-      toastTimer = setTimeout(function () {
-        toastEl.hidden = true;
-        toastEl.textContent = "";
-      }, 3200);
-    }
 
     function setSnapshotsOpen(open) {
       if (!toggle || !panel) return;
@@ -3554,13 +3550,18 @@
           var m = meta.textContent.match(/inputs\/([^\s·]+)/);
           if (m) defaultName = m[1];
         }
-        var name = window.prompt("Snapshot name (optional)", defaultName || "");
+        var name = window.prompt("Save snapshot as (name required)", defaultName || "");
         if (name === null) return;
+        name = String(name || "").trim();
+        if (!name) {
+          showAppToast("Enter a snapshot name.");
+          return;
+        }
         saveBtn.disabled = true;
         fetch("index.php?action=save-snapshot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: String(name || "").trim() }),
+          body: JSON.stringify({ name: name }),
         })
           .then(function (res) {
             return res.json().then(function (data) {
@@ -3574,15 +3575,16 @@
               );
             }
             var snap = result.data.snapshot || {};
-            showToast(
-              "Saved " + (snap.path || "snapshot") + " — open anytime via Snapshots"
+            showAppToast(
+              "Saved " + (snap.path || "snapshot") + " — open anytime via Snapshots",
+              { saved: true }
             );
             window.setTimeout(function () {
               window.location.reload();
             }, 700);
           })
           .catch(function (err) {
-            showToast(err && err.message ? err.message : "Save failed");
+            showAppToast(err && err.message ? err.message : "Save failed");
           })
           .then(function () {
             saveBtn.disabled = false;
