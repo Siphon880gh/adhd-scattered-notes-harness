@@ -13,6 +13,8 @@ A Cursor / Claude Code harness for turning a folder of ad-hoc notes into grouped
 
 The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 adjustments in the browser (move / tag / reorder / Suggest / green-check — saved into `phase2.json` or `phase2-suggestions.md`), then return to the chat for merges, fidelity fixes, or Phase 3 auto-tagging. Phase 3 locks review controls and is mainly **filter + Copy** into your permanent notes app.
 
+The newer version is packed with more ways to organize your scattered ideas: colored note regions, a map of the whole file, Split and Merge when a boundary is wrong, and a Projects menu so folders such as `inputs/sort-scattered` and `inputs/sample` stay separate.
+
 ## Why this exists for ADHD
 
 If you have ADHD, notes rarely land in one place. You jot something in a `.txt` file, sketch an idea in a `.md` note, save a half-formed thought in another file—and weeks later you have a folder of fragments with no clear through-line.
@@ -142,6 +144,14 @@ Between steps, serve and open the app as usual (`php -S localhost:8765` → `htt
 Anyone who captures thoughts in bursts and organizes later—or never quite gets to the organizing part. Messy files, personal shorthand, split subjects, and divider chaos are expected. The harness meets you where your notes already are and turns them into something you can act on or look up.
 
 ## How it looks / how to use
+
+### Phase 1 — distinct ideas, and a map of the whole file
+
+Open a batch in the app and each note is its own colored region, numbered with the source line range. Here `inputs/sort-scattered` is 54 notes, split on a line of dashes (`---`). The counts along the top — Files, Uncertain, YouTube, Links, Blocked — open a list; click a row and the page jumps to that line. The strip on the right is the whole file, one band per note, so a long dump stays visible at once. **Suggest** sits on a shorthand flag and on a green YouTube or link line.
+
+If the boundary is wrong, **Split** a region that is really two ideas, or **Merge up** / **Merge down** when two regions are the same idea. Colors are reassigned so two notes in a row never share one. **Projects** in the header switches to another folder and restores that project’s phase. Snapshots, saved from Phase 3, stay available from either project.
+
+![Phase 1: numbered colored notes, review counts, and a map of every note in the file](assets/screenshots/new-features-show-distinct-ideas-and-map.png)
 
 ### 1. Run the skill and pick a folder
 
