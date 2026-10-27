@@ -132,58 +132,58 @@ Anyone who captures thoughts in bursts and organizes later—or never quite gets
 
 In Cursor or Claude Code, ask to use the scattered-notes skill. The agent lists folders under `inputs/` and waits for you to pick one (here: `sample`).
 
-![Run the skill and pick a folder](docs/screenshots/a1.png)
+![Run the skill and pick a folder](assets/screenshots/a1.png)
 
 ### 2. Phase 1 artifacts land in the batch folder
 
 The skill writes `phase1.json` (uncertain marks, YouTube descriptors) and points you at the PHP app to review—or you can tell it Phase 1 looks good and to continue.
 
-![Phase 1 artifacts in the editor](docs/screenshots/a2.png)
+![Phase 1 artifacts in the editor](assets/screenshots/a2.png)
 
 ### 3. Review Phase 1 in the app — uncertain marks and YouTube adds
 
 Open `index.php`. Uncertain shorthand is highlighted with a note; YouTube links get a green added descriptor. Explain marks back in chat, or say Phase 1 looks good.
 
-![Phase 1: braindump with marks and YouTube descriptor](docs/screenshots/b.png)
+![Phase 1: braindump with marks and YouTube descriptor](assets/screenshots/b.png)
 
 ### 4. Flip through files — more shorthand marks
 
 Same Phase 1 view on another note (`half-thoughts.md`): e.g. `pg` flagged for confirmation.
 
-![Phase 1: half-thoughts with pg mark](docs/screenshots/c.png)
+![Phase 1: half-thoughts with pg mark](assets/screenshots/c.png)
 
 ### 5. Cross-file marks
 
 Marks can repeat across files (e.g. `WTF` in `random.txt` linked to the same token in `braindump.md`).
 
-![Phase 1: random.txt with WTF mark](docs/screenshots/d.png)
+![Phase 1: random.txt with WTF mark](assets/screenshots/d.png)
 
 ### 6. Advance to Phase 2 in chat
 
 Back in the agent chat, ask to proceed to Phase 2. The skill writes `phase2.json` and sets `app.config.json` to phase 2.
 
-![Proceed to Phase 2 in chat](docs/screenshots/e.png)
+![Proceed to Phase 2 in chat](assets/screenshots/e.png)
 
 ### 7. Phase 2 — organized panels you can edit
 
 Reload the app. The main view shows **Scattered**, **Reference**, and **Articles** with source line links. On each card, use the right-side tray to add tags and Move between panels. Use the top Filter chips once tags exist; collapse panels from the header; use ↔ to rearrange within a panel.
 
-![Phase 2: organized tasks](docs/screenshots/f.png)
+![Phase 2: organized tasks](assets/screenshots/f.png)
 
 ### 8. Hamburger — original notes with per-line accounting
 
 Use the hamburger (or **B**) to open or close original notes. Each source line shows what it became (`mapped`, `merged`, `reference`, `dropped_noise`, etc.) so nothing disappears silently.
 
-![Phase 2: line accounting panel](docs/screenshots/g.png)
+![Phase 2: line accounting panel](assets/screenshots/g.png)
 
 ### 9. Phase 2 — suggest at the group level
 
 On a section header (Scattered / Reference / Articles), click **Suggest** and tell the AI how to change every note in that group—for example, heading style, ordering, or tagging. The note is saved to `phase2-suggestions.md` for the next pass.
 
-![Phase 2: giving group-level Suggest instructions](docs/screenshots/suggest-section-2.png)
+![Phase 2: giving group-level Suggest instructions](assets/screenshots/suggest-section-2.png)
 
 ### 10. Phase 3 — group instructions applied
 
 After you advance, those section-level instructions are applied across the whole group. Here, “Precede each heading with Task:” rewrote every Scattered heading; Phase 3 then locks Suggest and green-check so you can filter and Copy into your notes app.
 
-![Phase 3: group Suggest instructions applied to all notes in the section](docs/screenshots/suggest-section-1.png)
+![Phase 3: group Suggest instructions applied to all notes in the section](assets/screenshots/suggest-section-1.png)
