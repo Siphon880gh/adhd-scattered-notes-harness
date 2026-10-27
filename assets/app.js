@@ -3519,6 +3519,8 @@
     var menu = qs("[data-snapshots-menu]");
     var toggle = qs("[data-snapshots-toggle]");
     var panel = qs("[data-snapshots-panel]");
+    var manageBtn = qs("[data-snapshots-manage]");
+    var manageLabel = qs("[data-snapshots-manage-label]");
     var saveBtn = qs("[data-save-snapshot]");
     var dialog = qs("[data-snapshot-dialog]");
     var dialogForm = qs("[data-snapshot-dialog-form]");
@@ -3533,6 +3535,11 @@
       if (!toggle || !panel) return;
       panel.hidden = !open;
       toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (!open && manageBtn) {
+        panel.classList.remove("is-managing");
+        manageBtn.setAttribute("aria-pressed", "false");
+        if (manageLabel) manageLabel.textContent = "Manage";
+      }
     }
 
     if (toggle && panel) {
@@ -3547,6 +3554,16 @@
       });
       document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") setSnapshotsOpen(false);
+      });
+    }
+
+    if (manageBtn && panel) {
+      manageBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var managing = panel.classList.toggle("is-managing");
+        manageBtn.setAttribute("aria-pressed", managing ? "true" : "false");
+        if (manageLabel) manageLabel.textContent = managing ? "Done" : "Manage";
       });
     }
 

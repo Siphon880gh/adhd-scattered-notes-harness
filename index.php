@@ -625,7 +625,17 @@ $isSnapshotView = $viewingSnapshot !== null;
                 Snapshots<?= $snapshotList !== [] ? ' (' . count($snapshotList) . ')' : '' ?>
             </button>
             <div class="app-header__snapshots-panel" data-snapshots-panel hidden>
-                <div class="app-header__snapshots-head">Saved snapshots</div>
+                <div class="app-header__snapshots-head">
+                    <span>Saved snapshots</span>
+                    <?php if ($snapshotList !== []): ?>
+                        <button type="button" class="app-header__snapshot-manage" data-snapshots-manage aria-pressed="false" title="Show rename and delete controls">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                            </svg>
+                            <span data-snapshots-manage-label>Manage</span>
+                        </button>
+                    <?php endif; ?>
+                </div>
                 <?php if ($snapshotList === []): ?>
                     <p class="app-header__snapshots-empty muted">No snapshots yet. Save one from Phase 3.</p>
                 <?php else: ?>

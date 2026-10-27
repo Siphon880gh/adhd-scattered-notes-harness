@@ -197,12 +197,40 @@ code {
 }
 
 .app-header__snapshots-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-muted);
   margin-bottom: 0.45rem;
+}
+
+.app-header__snapshot-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.app-header__snapshot-manage:hover,
+.app-header__snapshot-manage:focus-visible,
+.app-header__snapshot-manage[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--bg-elevated);
+  color: var(--ink);
 }
 
 .app-header__snapshots-empty {
@@ -252,9 +280,13 @@ code {
 }
 
 .app-header__snapshot-actions {
-  display: flex;
+  display: none;
   gap: 0.15rem;
   padding-right: 0.25rem;
+}
+
+.app-header__snapshots-panel.is-managing .app-header__snapshot-actions {
+  display: flex;
 }
 
 .app-header__snapshot-action {
