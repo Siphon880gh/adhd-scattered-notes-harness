@@ -3520,6 +3520,14 @@
     var toggle = qs("[data-snapshots-toggle]");
     var panel = qs("[data-snapshots-panel]");
     var saveBtn = qs("[data-save-snapshot]");
+    var dialog = qs("[data-snapshot-dialog]");
+    var dialogForm = qs("[data-snapshot-dialog-form]");
+    var dialogTitle = qs("[data-snapshot-dialog-title]");
+    var dialogMessage = qs("[data-snapshot-dialog-message]");
+    var dialogNameField = qs("[data-snapshot-dialog-name-field]");
+    var dialogName = qs("[data-snapshot-dialog-name]");
+    var dialogSubmit = qs("[data-snapshot-dialog-submit]");
+    var dialogAction = null;
 
     function setSnapshotsOpen(open) {
       if (!toggle || !panel) return;
@@ -3539,6 +3547,101 @@
       });
       document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") setSnapshotsOpen(false);
+      });
+    }
+
+    function updateSnapshot(url, payload) {
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && data.error) || "Snapshot update failed");
+          }
+          return data;
+        });
+      });
+    }
+
+    function closeSnapshotDialog() {
+      if (!dialog) return;
+      dialog.hidden = true;
+      dialogAction = null;
+    }
+
+    function openSnapshotDialog(action, id, name) {
+      if (!dialog || !dialogForm || !dialogTitle || !dialogMessage || !dialogSubmit) return;
+      dialogAction = { action: action, id: id, name: name };
+      var isDelete = action === "delete";
+      dialogTitle.textContent = isDelete ? "Delete snapshot?" : "Rename snapshot";
+      dialogMessage.textContent = isDelete
+        ? 'Delete "' + name + '"? This cannot be undone.'
+        : "Choose a new name for this snapshot.";
+      dialogNameField.hidden = isDelete;
+      dialogName.required = !isDelete;
+      dialogName.value = isDelete ? "" : name;
+      dialogSubmit.textContent = isDelete ? "Delete" : "Rename";
+      dialogSubmit.classList.toggle("app-header__btn--danger", isDelete);
+      dialog.hidden = false;
+      if (!isDelete) {
+        dialogName.focus();
+        dialogName.select();
+      } else {
+        dialogSubmit.focus();
+      }
+    }
+
+    if (dialog) {
+      qsa("[data-snapshot-dialog-cancel]", dialog).forEach(function (btn) {
+        btn.addEventListener("click", closeSnapshotDialog);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !dialog.hidden) closeSnapshotDialog();
+      });
+      dialogForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!dialogAction) return;
+        var isDelete = dialogAction.action === "delete";
+        var nextName = String(dialogName.value || "").trim();
+        if (!isDelete && !nextName) {
+          showAppToast("Enter a snapshot name.");
+          dialogName.focus();
+          return;
+        }
+        dialogSubmit.disabled = true;
+        updateSnapshot(
+          "index.php?action=" + (isDelete ? "delete-snapshot" : "rename-snapshot"),
+          isDelete ? { id: dialogAction.id } : { id: dialogAction.id, name: nextName }
+        )
+          .then(function () {
+            showAppToast(isDelete ? "Snapshot deleted" : "Snapshot renamed", { saved: true });
+            var wasCurrentSnapshot = new URL(window.location.href).searchParams.get("snapshot") === dialogAction.id;
+            window.setTimeout(function () {
+              window.location.href = wasCurrentSnapshot && isDelete ? "index.php" : window.location.href;
+            }, 500);
+          })
+          .catch(function (err) {
+            showAppToast(err && err.message ? err.message : (isDelete ? "Delete failed" : "Rename failed"));
+          })
+          .then(function () { dialogSubmit.disabled = false; });
+      });
+    }
+
+    if (panel) {
+      panel.addEventListener("click", function (e) {
+        var renameBtn = e.target.closest("[data-rename-snapshot]");
+        var deleteBtn = e.target.closest("[data-delete-snapshot]");
+        var btn = renameBtn || deleteBtn;
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        var id = String(btn.getAttribute("data-snapshot-id") || "");
+        var name = String(btn.getAttribute("data-snapshot-name") || "Snapshot");
+        if (!id) return;
+        openSnapshotDialog(renameBtn ? "rename" : "delete", id, name);
       });
     }
 

@@ -1435,3 +1435,63 @@ function update_snapshot(string $id, array $phase2): array
         ],
     ];
 }
+
+/**
+ * Rename a snapshot while preserving its stable file id and contents.
+ *
+ * @return array{ok: bool, error?: string, snapshot?: array{id: string, name: string, sourceFolder: string, createdAt: string, path: string}}
+ */
+function rename_snapshot(string $id, string $name): array
+{
+    $safe = sanitize_snapshot_id($id);
+    $path = snapshot_path($safe);
+    if ($safe === '' || $path === '' || !is_file($path)) {
+        return ['ok' => false, 'error' => 'Snapshot not found.'];
+    }
+
+    $label = mb_substr(trim($name), 0, 80);
+    if ($label === '') {
+        return ['ok' => false, 'error' => 'Enter a snapshot name.'];
+    }
+    foreach (list_snapshots() as $existingSnap) {
+        if ((string) ($existingSnap['id'] ?? '') !== $safe
+            && strtolower((string) ($existingSnap['name'] ?? '')) === strtolower($label)) {
+            return ['ok' => false, 'error' => 'A snapshot named "' . $label . '" already exists. Choose a different name.'];
+        }
+    }
+
+    $payload = load_json_file($path);
+    if ($payload === null) {
+        return ['ok' => false, 'error' => 'Could not read snapshot file.'];
+    }
+    $payload['id'] = $safe;
+    $payload['name'] = $label;
+    if (!save_json_file($path, $payload)) {
+        return ['ok' => false, 'error' => 'Could not write snapshot file.'];
+    }
+
+    $snapshot = load_snapshot($safe);
+    if ($snapshot === null) {
+        return ['ok' => false, 'error' => 'Could not reload renamed snapshot.'];
+    }
+    $snapshot['path'] = 'snapshots/' . $safe . '.json';
+    return ['ok' => true, 'snapshot' => $snapshot];
+}
+
+/**
+ * Delete one safely resolved snapshot file.
+ *
+ * @return array{ok: bool, error?: string}
+ */
+function delete_snapshot(string $id): array
+{
+    $safe = sanitize_snapshot_id($id);
+    $path = snapshot_path($safe);
+    if ($safe === '' || $path === '' || !is_file($path)) {
+        return ['ok' => false, 'error' => 'Snapshot not found.'];
+    }
+    if (!unlink($path)) {
+        return ['ok' => false, 'error' => 'Could not delete snapshot file.'];
+    }
+    return ['ok' => true];
+}

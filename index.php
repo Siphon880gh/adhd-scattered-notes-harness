@@ -293,6 +293,63 @@ if (
 }
 
 if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'rename-snapshot'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    $snapshotId = is_array($payload) ? sanitize_snapshot_id((string) ($payload['id'] ?? '')) : '';
+    $name = is_array($payload) ? trim((string) ($payload['name'] ?? '')) : '';
+    if ($snapshotId === '' || $name === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Snapshot id and name are required.']);
+        exit;
+    }
+
+    $result = rename_snapshot($snapshotId, $name);
+    if (empty($result['ok'])) {
+        $error = (string) ($result['error'] ?? 'Could not rename snapshot.');
+        $isConflict = stripos($error, 'already exists') !== false;
+        http_response_code($isConflict ? 400 : 404);
+        echo json_encode(['ok' => false, 'error' => $error]);
+        exit;
+    }
+
+    echo json_encode(['ok' => true, 'snapshot' => $result['snapshot']]);
+    exit;
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'delete-snapshot'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    $snapshotId = is_array($payload) ? sanitize_snapshot_id((string) ($payload['id'] ?? '')) : '';
+    if ($snapshotId === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Snapshot id is required.']);
+        exit;
+    }
+
+    $result = delete_snapshot($snapshotId);
+    if (empty($result['ok'])) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => (string) ($result['error'] ?? 'Could not delete snapshot.')]);
+        exit;
+    }
+
+    echo json_encode(['ok' => true, 'id' => $snapshotId]);
+    exit;
+}
+
+if (
     $_SERVER['REQUEST_METHOD'] === 'GET'
     && isset($_GET['action'])
     && (string) $_GET['action'] === 'list-snapshots'
@@ -574,7 +631,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 <?php else: ?>
                     <ul class="app-header__snapshots-list">
                         <?php foreach ($snapshotList as $snap): ?>
-                            <li>
+                            <li class="app-header__snapshot-item">
                                 <a class="app-header__snapshots-link<?= $isSnapshotView && (string) $viewingSnapshot['id'] === (string) $snap['id'] ? ' is-active' : '' ?>"
                                    href="index.php?snapshot=<?= e(rawurlencode((string) $snap['id'])) ?>">
                                     <span class="app-header__snapshots-name"><?= e((string) $snap['name']) ?></span>
@@ -587,6 +644,10 @@ $isSnapshotView = $viewingSnapshot !== null;
                                         <?php endif; ?>
                                     </span>
                                 </a>
+                                <div class="app-header__snapshot-actions" aria-label="Actions for <?= e((string) $snap['name']) ?>">
+                                    <button type="button" class="app-header__snapshot-action" data-rename-snapshot data-snapshot-id="<?= e((string) $snap['id']) ?>" data-snapshot-name="<?= e((string) $snap['name']) ?>">Rename</button>
+                                    <button type="button" class="app-header__snapshot-action app-header__snapshot-action--delete" data-delete-snapshot data-snapshot-id="<?= e((string) $snap['id']) ?>" data-snapshot-name="<?= e((string) $snap['name']) ?>">Delete</button>
+                                </div>
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -611,6 +672,21 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php endif; ?>
     </div>
 </header>
+<div class="snapshot-dialog" data-snapshot-dialog role="dialog" aria-modal="true" aria-labelledby="snapshot-dialog-title" hidden>
+    <div class="snapshot-dialog__backdrop" data-snapshot-dialog-cancel></div>
+    <form class="snapshot-dialog__card" data-snapshot-dialog-form aria-labelledby="snapshot-dialog-title">
+        <h2 id="snapshot-dialog-title" data-snapshot-dialog-title>Rename snapshot</h2>
+        <p class="muted" data-snapshot-dialog-message></p>
+        <label class="snapshot-dialog__label" data-snapshot-dialog-name-field>
+            Snapshot name
+            <input type="text" maxlength="80" required data-snapshot-dialog-name>
+        </label>
+        <div class="snapshot-dialog__actions">
+            <button type="button" class="app-header__btn" data-snapshot-dialog-cancel>Cancel</button>
+            <button type="submit" class="app-header__btn" data-snapshot-dialog-submit>Rename</button>
+        </div>
+    </form>
+</div>
 
 <?php if ($snapshotMissing): ?>
 <aside class="banner banner--warn">

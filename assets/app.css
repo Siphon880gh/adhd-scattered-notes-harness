@@ -102,6 +102,76 @@ code {
   color: inherit;
 }
 
+.app-header__btn--danger {
+  border-color: var(--danger, #e06c75);
+  color: var(--danger, #e06c75);
+}
+
+.snapshot-dialog[hidden] {
+  display: none;
+}
+
+.snapshot-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.snapshot-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.snapshot-dialog__card {
+  position: relative;
+  width: min(28rem, 100%);
+  padding: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.snapshot-dialog__card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+}
+
+.snapshot-dialog__card p {
+  margin: 0 0 0.85rem;
+}
+
+.snapshot-dialog__label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.snapshot-dialog__label[hidden] {
+  display: none;
+}
+
+.snapshot-dialog__label input {
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font: inherit;
+}
+
+.snapshot-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+
 .app-header__meta-sep {
   margin: 0 0.15rem;
   opacity: 0.55;
@@ -149,6 +219,13 @@ code {
   gap: 0.25rem;
 }
 
+.app-header__snapshot-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem;
+  align-items: center;
+}
+
 .app-header__snapshots-link {
   display: flex;
   flex-direction: column;
@@ -172,6 +249,36 @@ code {
 .app-header__snapshots-meta {
   font-size: 0.78rem;
   font-family: var(--mono);
+}
+
+.app-header__snapshot-actions {
+  display: flex;
+  gap: 0.15rem;
+  padding-right: 0.25rem;
+}
+
+.app-header__snapshot-action {
+  padding: 0.25rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.app-header__snapshot-action:hover,
+.app-header__snapshot-action:focus-visible {
+  border-color: var(--border);
+  background: var(--bg-elevated);
+  color: var(--ink);
+}
+
+.app-header__snapshot-action--delete:hover,
+.app-header__snapshot-action--delete:focus-visible {
+  border-color: var(--danger, #e06c75);
+  color: var(--danger, #e06c75);
 }
 
 .banner--snapshot {
