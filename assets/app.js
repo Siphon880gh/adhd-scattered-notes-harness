@@ -3256,12 +3256,65 @@
 
   var bucketCountsBar = qs("[data-bucket-counts]");
   if (bucketCountsBar) {
+    function closeCountMenus(except) {
+      qsa("[data-count-menu].is-open", bucketCountsBar).forEach(function (menu) {
+        if (except && menu === except) return;
+        menu.classList.remove("is-open");
+        var toggle = qs("[data-count-menu-toggle]", menu);
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      });
+    }
+
+    function scrollToJumpTarget(id) {
+      var target = document.getElementById(id);
+      if (!target) return false;
+      var header = qs(".app-header");
+      var counts = qs("[data-bucket-counts]");
+      var offset = (header ? header.offsetHeight : 0) + (counts ? counts.offsetHeight : 0) + 10;
+      var top = target.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      target.classList.remove("is-jump-flash");
+      void target.offsetWidth;
+      target.classList.add("is-jump-flash");
+      return true;
+    }
+
     bucketCountsBar.addEventListener("click", function (e) {
+      var toggle = e.target.closest("[data-count-menu-toggle]");
+      if (toggle && bucketCountsBar.contains(toggle)) {
+        var menu = toggle.closest("[data-count-menu]");
+        var willOpen = menu && !menu.classList.contains("is-open");
+        closeCountMenus(willOpen ? menu : null);
+        if (menu && willOpen) {
+          menu.classList.add("is-open");
+          toggle.setAttribute("aria-expanded", "true");
+        }
+        return;
+      }
+
+      var jump = e.target.closest("[data-count-jump]");
+      if (jump && bucketCountsBar.contains(jump)) {
+        var id = jump.getAttribute("data-count-jump") || "";
+        if (id && scrollToJumpTarget(id)) {
+          e.preventDefault();
+          closeCountMenus();
+          jump.blur();
+        }
+        return;
+      }
+
       var btn = e.target.closest("[data-jump-bucket]");
       if (!btn || !bucketCountsBar.contains(btn)) return;
       var bucket = btn.getAttribute("data-jump-bucket");
       if (!bucket) return;
       jumpToBucketSection(bucket);
+    });
+
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest("[data-count-menu]")) closeCountMenus();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeCountMenus();
     });
   }
 
@@ -3515,7 +3568,140 @@
         closePhase1SuggestPanels();
       }
     });
+
+    initPhase1Minimap();
   })();
+
+  function initPhase1Minimap() {
+    var map = qs("[data-phase1-minimap]");
+    var track = map ? qs("[data-minimap-track]", map) : null;
+    var viewport = map ? qs("[data-minimap-viewport]", map) : null;
+    var doc = qs("[data-phase1-lines]");
+    if (!map || !track || !viewport || !doc) return;
+
+    var notes = qsa("[data-thought]", doc);
+    var buttons = qsa("[data-minimap-note]", map);
+    var dragging = false;
+    var dragOffset = 0;
+
+    function chromeOffset() {
+      var header = qs(".app-header");
+      var counts = qs("[data-bucket-counts]");
+      return (header ? header.offsetHeight : 0) + (counts ? counts.offsetHeight : 0) + 10;
+    }
+
+    function layoutBlocks() {
+      var docH = doc.offsetHeight;
+      var trackH = track.clientHeight;
+      var docRect = doc.getBoundingClientRect();
+      if (docH <= 0 || trackH <= 0) return;
+      buttons.forEach(function (btn) {
+        var id = btn.getAttribute("data-minimap-note") || "";
+        var section = qs('[data-thought="' + id.replace(/"/g, "") + '"]', doc);
+        if (!section) return;
+        var rect = section.getBoundingClientRect();
+        var px = Math.max(2, (rect.height / docH) * trackH);
+        btn.style.position = "absolute";
+        btn.style.left = "0";
+        btn.style.right = "0";
+        btn.style.flex = "none";
+        btn.style.top = ((rect.top - docRect.top) / docH) * trackH + "px";
+        btn.style.height = px + "px";
+        btn.classList.toggle("is-labeled", px >= 12);
+      });
+    }
+
+    function placeViewport() {
+      var trackH = track.clientHeight;
+      var docH = doc.offsetHeight;
+      if (trackH <= 0 || docH <= 0) return;
+      var size = Math.min(1, window.innerHeight / docH);
+      var start = (window.scrollY - contentTop()) / docH;
+      if (start < 0) start = 0;
+      if (start > 1 - size) start = 1 - size;
+      viewport.hidden = false;
+      viewport.style.height = Math.max(14, size * trackH) + "px";
+      viewport.style.top = start * trackH + "px";
+    }
+
+    function contentTop() {
+      return doc.getBoundingClientRect().top + window.scrollY;
+    }
+
+    function markCurrent() {
+      var focusY = chromeOffset() + 8;
+      var current = "";
+      notes.forEach(function (el) {
+        if (current) return;
+        var rect = el.getBoundingClientRect();
+        if (rect.top <= focusY && rect.bottom > focusY) {
+          current = el.getAttribute("data-thought") || "";
+        }
+      });
+      if (!current && notes.length) {
+        current = notes[0].getBoundingClientRect().top > focusY
+          ? notes[0].getAttribute("data-thought") || ""
+          : notes[notes.length - 1].getAttribute("data-thought") || "";
+      }
+      notes.forEach(function (el) {
+        el.classList.toggle("is-current", (el.getAttribute("data-thought") || "") === current);
+      });
+      buttons.forEach(function (el) {
+        var on = (el.getAttribute("data-minimap-note") || "") === current;
+        el.classList.toggle("is-current", on);
+        if (on) el.setAttribute("aria-current", "true");
+        else el.removeAttribute("aria-current");
+      });
+    }
+
+    function refresh() {
+      layoutBlocks();
+      placeViewport();
+      markCurrent();
+    }
+
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-minimap-note") || "";
+        var section = qs('[data-thought="' + id.replace(/"/g, "") + '"]', doc);
+        if (!section) return;
+        var top = section.getBoundingClientRect().top + window.scrollY - chromeOffset();
+        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      });
+    });
+
+    viewport.addEventListener("mousedown", function (e) {
+      dragging = true;
+      dragOffset = e.clientY - viewport.getBoundingClientRect().top;
+      viewport.classList.add("is-dragging");
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", function (e) {
+      if (!dragging) return;
+      var rect = track.getBoundingClientRect();
+      var y = e.clientY - rect.top - dragOffset;
+      var ratio = rect.height > 0 ? y / rect.height : 0;
+      var target = contentTop() + ratio * doc.offsetHeight;
+      window.scrollTo(0, Math.max(0, target));
+    });
+
+    document.addEventListener("mouseup", function () {
+      if (!dragging) return;
+      dragging = false;
+      viewport.classList.remove("is-dragging");
+    });
+
+    doc.addEventListener("click", function () {
+      requestAnimationFrame(refresh);
+    });
+    window.addEventListener("scroll", function () {
+      placeViewport();
+      markCurrent();
+    }, { passive: true });
+    window.addEventListener("resize", refresh);
+    refresh();
+  }
 
   // --- Phase 3 snapshots ---
   (function initSnapshots() {

@@ -459,6 +459,199 @@ function normalize_organized_item(array $item, string $bucket): array
 }
 
 /**
+ * Dash-only fence length, or 0 when the line is not a note break.
+ * Three or more dashes (`---`, `------`) match the harness divider rules.
+ */
+function phase1_dash_length(string $text): int
+{
+    $trim = trim($text);
+    if ($trim === '' || preg_match('/^-{3,}$/', $trim) !== 1) {
+        return 0;
+    }
+
+    return strlen($trim);
+}
+
+function phase1_thought_hue(int $id): int
+{
+    $hues = [199, 152, 42, 270, 330, 12, 88, 230];
+
+    return $hues[($id - 1) % count($hues)];
+}
+
+function phase1_thought_preview(string $text, int $max = 84): string
+{
+    $text = trim((string) (preg_replace('/\s+/u', ' ', $text) ?? ''));
+    if ($text === '') {
+        return '';
+    }
+    if (function_exists('mb_strlen') && mb_strlen($text) > $max) {
+        return rtrim(mb_substr($text, 0, $max - 1)) . '…';
+    }
+    if (strlen($text) > $max) {
+        return rtrim(substr($text, 0, $max - 1)) . '…';
+    }
+
+    return $text;
+}
+
+/**
+ * Indexes of short dash lines kept as content because a longer fence wraps them
+ * (`---` inside a `------` article wrapper).
+ *
+ * @param list<array<string, mixed>> $lines
+ * @return array<int, true>
+ */
+function phase1_protected_dash_indexes(array $lines): array
+{
+    $byLength = [];
+    foreach ($lines as $i => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $len = phase1_dash_length((string) ($line['text'] ?? ''));
+        if ($len >= 6) {
+            $byLength[$len][] = $i;
+        }
+    }
+
+    $protected = [];
+    foreach ($byLength as $len => $positions) {
+        $pairs = intdiv(count($positions), 2);
+        for ($pair = 0; $pair < $pairs; $pair++) {
+            $start = $positions[$pair * 2];
+            $end = $positions[$pair * 2 + 1];
+            for ($j = $start + 1; $j < $end; $j++) {
+                $inner = $lines[$j] ?? null;
+                if (!is_array($inner)) {
+                    continue;
+                }
+                $innerLen = phase1_dash_length((string) ($inner['text'] ?? ''));
+                if ($innerLen >= 3 && $innerLen < $len) {
+                    $protected[$j] = true;
+                }
+            }
+        }
+    }
+
+    return $protected;
+}
+
+/**
+ * Group source lines into distinct notes.
+ * A line of only `---` (or longer) is a hard break. A longer matching fence
+ * keeps shorter dash lines inside that note. Files with no dash break split
+ * on blank lines instead.
+ *
+ * @param list<array<string, mixed>> $lines
+ * @return array{mode: string, thoughts: list<array{id: int, start: int, end: int, preview: string, lines: int, hue: int, uncertain: bool, added: bool, blocked: bool, indexes: list<int>}>}
+ */
+function phase1_thoughts(array $lines): array
+{
+    $lines = array_values($lines);
+    $protected = phase1_protected_dash_indexes($lines);
+    $hasHardBreak = false;
+    foreach ($lines as $i => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $len = phase1_dash_length((string) ($line['text'] ?? ''));
+        if ($len >= 3 && !isset($protected[$i])) {
+            $hasHardBreak = true;
+            break;
+        }
+    }
+
+    $thoughts = [];
+    $current = [];
+    $flush = function () use (&$thoughts, &$current, $lines): void {
+        $content = [];
+        foreach ($current as $i) {
+            $text = trim((string) ($lines[$i]['text'] ?? ''));
+            if ($text !== '') {
+                $content[] = $i;
+            }
+        }
+        if ($content === []) {
+            $current = [];
+            return;
+        }
+        $firstText = (string) ($lines[$content[0]]['text'] ?? '');
+        $startN = (int) ($lines[$content[0]]['n'] ?? ($content[0] + 1));
+        $last = $content[count($content) - 1];
+        $endN = (int) ($lines[$last]['n'] ?? ($last + 1));
+        $uncertain = false;
+        $added = false;
+        $blocked = false;
+        foreach ($content as $i) {
+            $row = $lines[$i];
+            $marks = $row['marks'] ?? [];
+            if (is_array($marks)) {
+                foreach ($marks as $mark) {
+                    if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
+                        $uncertain = true;
+                        break;
+                    }
+                }
+            }
+            $yt = $row['youtube'] ?? null;
+            if (is_array($yt) && !empty($yt['added'])) {
+                $added = true;
+            }
+            $link = $row['link'] ?? null;
+            if (is_array($link)) {
+                if (!empty($link['added'])) {
+                    $added = true;
+                }
+                if (!empty($link['blocked'])) {
+                    $blocked = true;
+                }
+            }
+        }
+        $id = count($thoughts) + 1;
+        $thoughts[] = [
+            'id' => $id,
+            'start' => $startN,
+            'end' => $endN,
+            'preview' => phase1_thought_preview($firstText),
+            'lines' => count($current),
+            'hue' => phase1_thought_hue($id),
+            'uncertain' => $uncertain,
+            'added' => $added,
+            'blocked' => $blocked,
+            'indexes' => $current,
+        ];
+        $current = [];
+    };
+
+    foreach ($lines as $i => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $text = (string) ($line['text'] ?? '');
+        $len = phase1_dash_length($text);
+        if ($hasHardBreak) {
+            if ($len >= 3 && !isset($protected[$i])) {
+                $flush();
+                continue;
+            }
+            $current[] = $i;
+            continue;
+        }
+        if (trim($text) === '') {
+            $flush();
+            continue;
+        }
+        $current[] = $i;
+    }
+    $flush();
+
+    $mode = $hasHardBreak ? 'dashes' : 'blanks';
+
+    return ['mode' => $mode, 'thoughts' => $thoughts];
+}
+
+/**
  * @param array<string, mixed>|null $phase1
  * @param list<string> $noteFiles
  * @return array{files: int, uncertain: int, youtube: int, links: int, blocked: int}
@@ -515,6 +708,143 @@ function phase1_review_counts(?array $phase1, array $noteFiles): array
         'links' => $links,
         'blocked' => $blocked,
     ];
+}
+
+function phase1_anchor(string $kind, string $file, int $line): string
+{
+    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $file));
+    $slug = trim($slug, '-');
+    if ($slug === '') {
+        $slug = 'file';
+    }
+
+    return 'p1-' . $kind . '-' . $slug . '-' . $line;
+}
+
+function phase1_jump_href(string $file, string $activeFile, string $anchor): string
+{
+    if ($file === $activeFile) {
+        return '#' . $anchor;
+    }
+
+    return '?file=' . rawurlencode($file) . '#' . $anchor;
+}
+
+/**
+ * One row per counted Phase 1 item, so the sticky totals can jump to each one.
+ *
+ * @param array<string, mixed>|null $phase1
+ * @param list<string> $noteFiles
+ * @return array<string, list<array{text: string, title: string, href: string, id: string}>>
+ */
+function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFile): array
+{
+    $many = count($noteFiles) > 1;
+    $jumps = [
+        'files' => [],
+        'uncertain' => [],
+        'youtube' => [],
+        'links' => [],
+        'blocked' => [],
+    ];
+
+    foreach ($noteFiles as $file) {
+        $jumps['files'][] = [
+            'text' => $file,
+            'title' => $file,
+            'href' => phase1_jump_href($file, $activeFile, 'p1-file'),
+            'id' => $file === $activeFile ? 'p1-file' : '',
+        ];
+
+        $lines = [];
+        if (is_array($phase1) && isset($phase1['files'][$file]['lines']) && is_array($phase1['files'][$file]['lines'])) {
+            $lines = $phase1['files'][$file]['lines'];
+        }
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $n = (int) ($line['n'] ?? 0);
+            $text = (string) ($line['text'] ?? '');
+            $where = ($many ? $file . ' · ' : '') . 'line ' . $n;
+
+            $tokens = [];
+            $marks = $line['marks'] ?? [];
+            if (is_array($marks)) {
+                foreach ($marks as $mark) {
+                    if (!is_array($mark) || ($mark['type'] ?? '') !== 'uncertain') {
+                        continue;
+                    }
+                    $token = trim((string) ($mark['token'] ?? ''));
+                    $tokens[] = $token !== '' ? $token : 'uncertain';
+                }
+            }
+            if ($tokens !== []) {
+                $snippet = phase1_thought_preview($text, 120);
+                $label = $where . ' · ' . implode(', ', $tokens);
+                if ($snippet !== '') {
+                    $label .= ' — ' . $snippet;
+                }
+                $anchor = phase1_anchor('line', $file, $n);
+                $jumps['uncertain'][] = [
+                    'text' => $label,
+                    'title' => $label,
+                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'id' => $file === $activeFile ? $anchor : '',
+                ];
+            }
+
+            $yt = $line['youtube'] ?? null;
+            if (is_array($yt) && !empty($yt['added'])) {
+                $title = trim((string) ($yt['title'] ?? ''));
+                if ($title === '') {
+                    $title = phase1_thought_preview($text, 120);
+                }
+                $label = $where . ' · ' . ($title !== '' ? $title : 'YouTube');
+                $anchor = phase1_anchor('yt', $file, $n);
+                $jumps['youtube'][] = [
+                    'text' => $label,
+                    'title' => $label,
+                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'id' => $file === $activeFile ? $anchor : '',
+                ];
+            }
+
+            $link = $line['link'] ?? null;
+            if (!is_array($link)) {
+                continue;
+            }
+            $url = trim((string) ($link['url'] ?? $text));
+            $title = trim((string) ($link['title'] ?? ''));
+            $shown = $title !== '' ? $title : $url;
+            if (!empty($link['added'])) {
+                $anchor = phase1_anchor('link', $file, $n);
+                $label = $where . ' · ' . ($shown !== '' ? $shown : 'Link');
+                $jumps['links'][] = [
+                    'text' => $label,
+                    'title' => $label . ($url !== '' && $url !== $shown ? ' — ' . $url : ''),
+                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'id' => $file === $activeFile ? $anchor : '',
+                ];
+            }
+            if (!empty($link['blocked'])) {
+                $intent = trim((string) ($link['intent'] ?? ''));
+                $label = $where . ' · ' . ($url !== '' ? $url : 'Blocked URL');
+                if ($intent !== '') {
+                    $label .= ' — ' . phase1_thought_preview($intent, 80);
+                }
+                $anchor = phase1_anchor('blocked', $file, $n);
+                $jumps['blocked'][] = [
+                    'text' => $label,
+                    'title' => $label,
+                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'id' => $file === $activeFile ? $anchor : '',
+                ];
+            }
+        }
+    }
+
+    return $jumps;
 }
 
 /**

@@ -448,7 +448,31 @@ function render_count_bar(array $items, string $ariaLabel): void
         $label = (string) ($item['label'] ?? '');
         $count = (int) ($item['count'] ?? 0);
         $key = isset($item['key']) ? (string) $item['key'] : '';
-        if ($key !== '') {
+        $jumps = $item['jumps'] ?? null;
+        if (is_array($jumps)) {
+            $align = !empty($item['alignEnd']) ? ' data-count-align="end"' : '';
+            echo '<div class="bucket-counts__menu" data-count-menu' . $align . '>';
+            echo '<button type="button" class="bucket-counts__item bucket-counts__item--link" data-count-menu-toggle aria-expanded="false" aria-haspopup="true" title="Show ' . e($label) . '">';
+            echo e($label) . ' (<span>' . $count . '</span>)';
+            echo '</button>';
+            echo '<div class="bucket-counts__panel" role="group" aria-label="' . e($label) . '">';
+            if ($jumps === []) {
+                echo '<p class="bucket-counts__empty">None</p>';
+            } else {
+                foreach ($jumps as $jump) {
+                    if (!is_array($jump)) {
+                        continue;
+                    }
+                    $text = (string) ($jump['text'] ?? '');
+                    $title = (string) ($jump['title'] ?? $text);
+                    $href = (string) ($jump['href'] ?? '#');
+                    $jumpId = (string) ($jump['id'] ?? '');
+                    $jumpAttr = $jumpId !== '' ? ' data-count-jump="' . e($jumpId) . '"' : '';
+                    echo '<a class="bucket-counts__jump" href="' . e($href) . '" title="' . e($title) . '"' . $jumpAttr . '>' . e($text) . '</a>';
+                }
+            }
+            echo '</div></div>';
+        } elseif ($key !== '') {
             echo '<button type="button" class="bucket-counts__item bucket-counts__item--link" data-jump-bucket="' . e($key) . '" title="Jump to ' . e($label) . '">';
             echo e($label) . ' (<span data-bucket-count="' . e($key) . '">' . $count . '</span>)';
             echo '</button>';
@@ -748,12 +772,13 @@ $isSnapshotView = $viewingSnapshot !== null;
     </main>
 <?php elseif ($phase === 1):
     $phase1Counts = phase1_review_counts($phase1, $noteFiles);
+    $phase1Jumps = phase1_review_jumps($phase1, $noteFiles, $activeFile);
     render_count_bar([
-        ['label' => 'Files', 'count' => $phase1Counts['files']],
-        ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain']],
-        ['label' => 'YouTube', 'count' => $phase1Counts['youtube']],
-        ['label' => 'Links', 'count' => $phase1Counts['links']],
-        ['label' => 'Blocked', 'count' => $phase1Counts['blocked']],
+        ['label' => 'Files', 'count' => $phase1Counts['files'], 'jumps' => $phase1Jumps['files']],
+        ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain'], 'jumps' => $phase1Jumps['uncertain']],
+        ['label' => 'YouTube', 'count' => $phase1Counts['youtube'], 'jumps' => $phase1Jumps['youtube']],
+        ['label' => 'Links', 'count' => $phase1Counts['links'], 'jumps' => $phase1Jumps['links'], 'alignEnd' => true],
+        ['label' => 'Blocked', 'count' => $phase1Counts['blocked'], 'jumps' => $phase1Jumps['blocked'], 'alignEnd' => true],
     ], 'Phase 1 review counts');
     ?>
     <aside class="banner banner--warn">
@@ -764,6 +789,11 @@ $isSnapshotView = $viewingSnapshot !== null;
             Reload this page after the skill updates <code>phase1.json</code>.
         </p>
         <ul>
+            <li>
+                Distinct notes are numbered in the file. A line that is only <code>---</code> starts a new note
+                (a longer <code>------</code> fence keeps shorter dashes inside that note).
+                Files with no dash break are split on blank lines. The map on the right is the whole file.
+            </li>
             <li>
                 For flagged shorthand: explain it in Cursor / Claude Code, <em>or</em> add an in-app <strong>Suggest</strong> note.
                 One Suggest for a shorthand covers every other flag of that same shorthand (they share the same comment).
@@ -778,6 +808,10 @@ $isSnapshotView = $viewingSnapshot !== null;
     </aside>
 
     <div class="layout" data-phase1-root>
+        <?php
+        $phase1Thoughts = [];
+        $phase1ThoughtMode = 'blanks';
+        ?>
         <nav class="file-nav" aria-label="Note files">
             <h2>Files</h2>
             <?php if ($noteFiles === []): ?>
@@ -868,7 +902,31 @@ $isSnapshotView = $viewingSnapshot !== null;
             <?php if ($activeFile === ''): ?>
                 <p class="muted">Add note files, then re-run the skill to generate <code>phase1.json</code>.</p>
             <?php else: ?>
-                <h1 class="panel-title"><?= e($activeFile) ?></h1>
+                <?php
+                $lines = array_values(lines_for_file($dir, $activeFile, $phase1));
+                $thoughtPack = phase1_thoughts($lines);
+                $phase1Thoughts = $thoughtPack['thoughts'];
+                $phase1ThoughtMode = (string) $thoughtPack['mode'];
+                $thoughtById = [];
+                $indexToThought = [];
+                foreach ($phase1Thoughts as $thought) {
+                    $thoughtById[(int) $thought['id']] = $thought;
+                    foreach ($thought['indexes'] as $idx) {
+                        $indexToThought[(int) $idx] = (int) $thought['id'];
+                    }
+                }
+                $thoughtCount = count($phase1Thoughts);
+                $thoughtNoun = $thoughtCount === 1 ? 'note' : 'notes';
+                if ($thoughtCount === 0) {
+                    $thoughtSummary = 'No note text in this file yet.';
+                } elseif ($phase1ThoughtMode === 'dashes') {
+                    $thoughtSummary = $thoughtCount . ' distinct ' . $thoughtNoun . ', split on a line of dashes (---).';
+                } else {
+                    $thoughtSummary = $thoughtCount . ' distinct ' . $thoughtNoun . ', split on blank lines.';
+                }
+                ?>
+                <h1 class="panel-title" id="p1-file"><?= e($activeFile) ?></h1>
+                <p class="thought-summary"><?= e($thoughtSummary) ?> The map is this whole file.</p>
                 <?php if ($phase1 === null): ?>
                     <p class="muted">
                         Showing raw lines — <code>phase1.json</code> is not present yet.
@@ -882,10 +940,10 @@ $isSnapshotView = $viewingSnapshot !== null;
                         (string) json_encode($phase1Suggestions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                     )
                 ?></script>
-                <div class="line-view">
+                <div class="line-view" data-phase1-lines>
                     <?php
-                    $lines = lines_for_file($dir, $activeFile, $phase1);
-                    foreach ($lines as $line):
+                    $thoughtOpen = 0;
+                    foreach ($lines as $lineIndex => $line):
                         if (!is_array($line)) {
                             continue;
                         }
@@ -908,6 +966,30 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 break;
                             }
                         }
+                        $thoughtId = $indexToThought[$lineIndex] ?? 0;
+                        if ($thoughtId !== $thoughtOpen) {
+                            if ($thoughtOpen !== 0) {
+                                echo '</section>';
+                            }
+                            $thoughtOpen = $thoughtId;
+                            if ($thoughtId !== 0 && isset($thoughtById[$thoughtId])) {
+                                $thought = $thoughtById[$thoughtId];
+                                $rangeLabel = (int) $thought['start'] === (int) $thought['end']
+                                    ? 'line ' . (int) $thought['start']
+                                    : 'lines ' . (int) $thought['start'] . '–' . (int) $thought['end'];
+                                echo '<section class="thought" data-thought="' . (int) $thought['id'] . '" id="thought-' . (int) $thought['id'] . '" style="--thought-hue: ' . (int) $thought['hue'] . '">';
+                                echo '<header class="thought__head">';
+                                echo '<span class="thought__index">Note ' . (int) $thought['id'] . '</span>';
+                                echo '<span class="thought__range">' . e($rangeLabel) . '</span>';
+                                if ((string) $thought['preview'] !== '') {
+                                    echo '<span class="thought__preview">' . e((string) $thought['preview']) . '</span>';
+                                }
+                                echo '</header>';
+                            }
+                        }
+                        if ($thoughtId === 0) {
+                            continue;
+                        }
                         if (is_array($youtube) && !empty($youtube['added'])):
                             $ytTitle = (string) ($youtube['title'] ?? 'YouTube');
                             $ytAbout = (string) ($youtube['about'] ?? '');
@@ -916,7 +998,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 $addedText .= ' — ' . $ytAbout;
                             }
                             ?>
-                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
+                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" id="<?= e(phase1_anchor('yt', $activeFile, $n)) ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
                                 <div class="line__n">+</div>
                                 <div class="line__body">
                                     <div class="line__text"><?= e($addedText) ?></div>
@@ -953,7 +1035,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 $linkAddedText .= ' — ' . $linkAbout;
                             }
                             ?>
-                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
+                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" id="<?= e(phase1_anchor('link', $activeFile, $n)) ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
                                 <div class="line__n">+</div>
                                 <div class="line__body">
                                     <div class="line__text"><?= e($linkAddedText) ?></div>
@@ -981,7 +1063,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 </div>
                             </div>
                         <?php endif; ?>
-                        <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?>">
+                        <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?>" id="<?= e(phase1_anchor('line', $activeFile, $n)) ?>">
                             <div class="line__n"><?= $n > 0 ? (int) $n : '' ?></div>
                             <div class="line__body">
                                 <div class="line__text"><?= e($text) ?></div>
@@ -1049,6 +1131,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                             ?>
                             <div
                                 class="url-block<?= $hasPaste ? ' has-paste' : '' ?>"
+                                id="<?= e(phase1_anchor('blocked', $activeFile, $n)) ?>"
                                 data-url-block
                                 data-url-file="<?= e($activeFile) ?>"
                                 data-url-line="<?= (int) $n ?>"
@@ -1088,10 +1171,53 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 </div>
                             </div>
                         <?php endif; ?>
-                    <?php endforeach; ?>
+                    <?php endforeach;
+                    if ($thoughtOpen !== 0) {
+                        echo '</section>';
+                    }
+                    ?>
                 </div>
             <?php endif; ?>
         </main>
+        <?php if ($phase1Thoughts !== []): ?>
+            <aside class="minimap" data-phase1-minimap aria-label="Map of every note in this file">
+                <div class="minimap__title">
+                    Map
+                    <span><?= count($phase1Thoughts) ?></span>
+                </div>
+                <div class="minimap__track" data-minimap-track>
+                    <?php foreach ($phase1Thoughts as $thought):
+                        $rangeLabel = (int) $thought['start'] === (int) $thought['end']
+                            ? 'line ' . (int) $thought['start']
+                            : 'lines ' . (int) $thought['start'] . '–' . (int) $thought['end'];
+                        $tip = 'Note ' . (int) $thought['id'] . ' · ' . $rangeLabel;
+                        if ((string) $thought['preview'] !== '') {
+                            $tip .= ' · ' . (string) $thought['preview'];
+                        }
+                        $markClass = '';
+                        if (!empty($thought['blocked'])) {
+                            $markClass .= ' has-blocked';
+                        }
+                        if (!empty($thought['uncertain'])) {
+                            $markClass .= ' has-uncertain';
+                        }
+                        if (!empty($thought['added'])) {
+                            $markClass .= ' has-added';
+                        }
+                        ?>
+                        <button type="button"
+                                class="minimap__note<?= e($markClass) ?>"
+                                data-minimap-note="<?= (int) $thought['id'] ?>"
+                                style="--thought-hue: <?= (int) $thought['hue'] ?>; --thought-lines: <?= max(1, (int) $thought['lines']) ?>"
+                                title="<?= e($tip) ?>"
+                                aria-label="<?= e($tip) ?>">
+                            <span class="minimap__note-label"><?= (int) $thought['id'] ?></span>
+                        </button>
+                    <?php endforeach; ?>
+                    <div class="minimap__viewport" data-minimap-viewport hidden></div>
+                </div>
+            </aside>
+        <?php endif; ?>
     </div>
 <?php else:
     $organized = $phase2 !== null
