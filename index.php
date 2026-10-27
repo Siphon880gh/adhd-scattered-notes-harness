@@ -208,6 +208,66 @@ if (
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST'
     && isset($_GET['action'])
+    && (string) $_GET['action'] === 'save-phase1-regions'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase !== 1) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Phase 1 region edits are only available in Phase 1.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with file and starts.']);
+        exit;
+    }
+
+    $file = basename(str_replace('\\', '/', (string) ($payload['file'] ?? '')));
+    $noteFilesForSave = list_note_files($dir);
+    if ($file === '' || !in_array($file, $noteFilesForSave, true)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Unknown note file.']);
+        exit;
+    }
+
+    $starts = $payload['starts'] ?? [];
+    if (!is_array($starts)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'starts must be a list of line numbers.']);
+        exit;
+    }
+
+    $lines = lines_for_file($dir, $file, load_json_file($dir . '/phase1.json'));
+    $overrides = phase1_region_overrides_from_starts($lines, $starts);
+    $regions = load_phase1_regions($dir);
+    if ($overrides['splits'] === [] && $overrides['joins'] === []) {
+        unset($regions[$file]);
+    } else {
+        $regions[$file] = $overrides;
+    }
+    if (!save_phase1_regions($dir, $regions)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write phase1-regions.md.']);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'file' => $file,
+        'edited' => $overrides['splits'] !== [] || $overrides['joins'] !== [],
+        'splits' => $overrides['splits'],
+        'joins' => $overrides['joins'],
+    ]);
+    exit;
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
     && (string) $_GET['action'] === 'save-snapshot'
 ) {
     header('Content-Type: application/json; charset=utf-8');
@@ -381,6 +441,7 @@ $phase2 = $folderExists ? load_json_file($dir . '/phase2.json') : null;
 $phase1Suggestions = $folderExists
     ? load_phase1_suggestions($dir)
     : normalize_phase1_suggestions(null);
+$phase1Regions = $folderExists ? load_phase1_regions($dir) : [];
 $phase2Suggestions = $folderExists
     ? load_phase2_suggestions($dir)
     : normalize_phase2_suggestions(null);
@@ -793,6 +854,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 Distinct notes are numbered in the file. A line that is only <code>---</code> starts a new note
                 (a longer <code>------</code> fence keeps shorter dashes inside that note).
                 Files with no dash break are split on blank lines. The map on the right is the whole file.
+                If a boundary is wrong, use <strong>Split</strong> inside a note or <strong>Merge up</strong> / <strong>Merge down</strong> on the note header. Colors update on their own, and two notes in a row never share a color.
             </li>
             <li>
                 For flagged shorthand: explain it in Cursor / Claude Code, <em>or</em> add an in-app <strong>Suggest</strong> note.
@@ -904,7 +966,8 @@ $isSnapshotView = $viewingSnapshot !== null;
             <?php else: ?>
                 <?php
                 $lines = array_values(lines_for_file($dir, $activeFile, $phase1));
-                $thoughtPack = phase1_thoughts($lines);
+                $regionOverrides = $phase1Regions[$activeFile] ?? ['splits' => [], 'joins' => []];
+                $thoughtPack = phase1_thoughts($lines, $regionOverrides);
                 $phase1Thoughts = $thoughtPack['thoughts'];
                 $phase1ThoughtMode = (string) $thoughtPack['mode'];
                 $thoughtById = [];
@@ -917,6 +980,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 }
                 $thoughtCount = count($phase1Thoughts);
                 $thoughtNoun = $thoughtCount === 1 ? 'note' : 'notes';
+                $regionEdited = ($regionOverrides['splits'] ?? []) !== [] || ($regionOverrides['joins'] ?? []) !== [];
                 if ($thoughtCount === 0) {
                     $thoughtSummary = 'No note text in this file yet.';
                 } elseif ($phase1ThoughtMode === 'dashes') {
@@ -924,9 +988,12 @@ $isSnapshotView = $viewingSnapshot !== null;
                 } else {
                     $thoughtSummary = $thoughtCount . ' distinct ' . $thoughtNoun . ', split on blank lines.';
                 }
+                if ($regionEdited && $thoughtCount > 0) {
+                    $thoughtSummary .= ' Your boundary edits are saved.';
+                }
                 ?>
                 <h1 class="panel-title" id="p1-file"><?= e($activeFile) ?></h1>
-                <p class="thought-summary"><?= e($thoughtSummary) ?> The map is this whole file.</p>
+                <p class="thought-summary" data-thought-summary data-thought-mode="<?= e($phase1ThoughtMode) ?>" data-thought-edited="<?= $regionEdited ? '1' : '0' ?>"><?= e($thoughtSummary) ?> The map is this whole file.</p>
                 <?php if ($phase1 === null): ?>
                     <p class="muted">
                         Showing raw lines — <code>phase1.json</code> is not present yet.
@@ -940,7 +1007,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         (string) json_encode($phase1Suggestions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                     )
                 ?></script>
-                <div class="line-view" data-phase1-lines>
+                <div class="line-view" data-phase1-lines data-phase1-file="<?= e($activeFile) ?>">
                     <?php
                     $thoughtOpen = 0;
                     foreach ($lines as $lineIndex => $line):
@@ -983,13 +1050,22 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 echo '<span class="thought__range">' . e($rangeLabel) . '</span>';
                                 if ((string) $thought['preview'] !== '') {
                                     echo '<span class="thought__preview">' . e((string) $thought['preview']) . '</span>';
+                                } else {
+                                    echo '<span class="thought__preview"></span>';
                                 }
+                                echo '<div class="thought__actions">';
+                                echo '<button type="button" class="thought__action" data-thought-split>Split</button>';
+                                echo '<button type="button" class="thought__action" data-thought-merge="prev">Merge up</button>';
+                                echo '<button type="button" class="thought__action" data-thought-merge="next">Merge down</button>';
+                                echo '</div>';
                                 echo '</header>';
                             }
                         }
                         if ($thoughtId === 0) {
                             continue;
                         }
+                        echo '<div class="thought-row" data-source-line="' . (int) $n . '">';
+                        echo '<button type="button" class="thought-row__split" data-thought-split-at="' . (int) $n . '">Split into a new note here</button>';
                         if (is_array($youtube) && !empty($youtube['added'])):
                             $ytTitle = (string) ($youtube['title'] ?? 'YouTube');
                             $ytAbout = (string) ($youtube['about'] ?? '');
@@ -1171,6 +1247,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 </div>
                             </div>
                         <?php endif; ?>
+                        <?php echo '</div>'; ?>
                     <?php endforeach;
                     if ($thoughtOpen !== 0) {
                         echo '</section>';

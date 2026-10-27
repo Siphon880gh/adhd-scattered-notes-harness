@@ -6,7 +6,8 @@ description: >-
   area tags. Use when the user wants to organize braindump .md/.txt notes
   (including .url.txt link captures), run the scattered-notes harness, update
   shorthands, enrich YouTube/web links (or collect browser pastes for blocked
-  URLs), or advance phase1/phase2/phase3 artifacts for index.php.
+  URLs), redraw Phase 1 note regions (split / merge; read phase1-regions.md),
+  or advance phase1/phase2/phase3 artifacts for index.php.
 ---
 
 # Scattered Notes Harness
@@ -23,6 +24,7 @@ This is primarily used under Cursor or Claude Code but we open the php file as a
 - User asks to process, organize, clarify, or continue a scattered-notes batch
 - User says **“start phase 1”**, **“start phase 2”**, **“start phase 3”**, or **“let’s continue”** (any phase — treat as resume/advance for the active batch)
 - User explains shorthand / symbols after reviewing Phase 1 in the app
+- User redraws Phase 1 note regions in the app (split one note, or merge two) and later asks about those boundaries
 - User confirms Phase 1 is done and wants Phase 2
 - User confirms Phase 2 is done and wants Phase 3 (auto-tagging)
 - User says **“Revert to Phase 2”** while in Phase 3 (unlock Suggest / green-check again)
@@ -36,6 +38,7 @@ Per batch folder `inputs/{folder}/`:
 | `*.md`, `*.txt` | Raw scattered notes (includes `*.url.txt` — URL capture files) |
 | `phase1.json` | Uncertain marks + YouTube + link enrichments (incl. blocked URLs awaiting user paste) |
 | `phase1-suggestions.md` | User feedback for Phase 1 — shared shorthand notes + per-enrichment notes; **read before rewriting Phase 1 / advancing** |
+| `phase1-regions.md` | User corrections to note boundaries (split / merge). **Read before Phase 2 grouping.** Do not treat it as a note. |
 | `phase2.json` | Organized notes + per-line blame map + item tags (+ optional `filterLayout`) |
 | `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole-section panels (Scattered / Reference / Articles); **read before writing/revising Phase 2** |
 
@@ -46,9 +49,9 @@ Project root:
 | `app.config.json` | `{ "inputFolder": "{folder}" \| "", "phase": 1 \| 2 \| 3 }` — skill owns this; empty `inputFolder` means no project selected |
 | `shorthands.md` | App-wide glossary — **always read before marking uncertainty**; shared by every batch |
 
-Skip when reading notes: `phase1.json`, `phase1-suggestions.md`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
+Skip when reading notes: `phase1.json`, `phase1-suggestions.md`, `phase1-regions.md`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
 
-A scattered note may be a line, a group of lines, or a whole file. Within a file, `---` separates notes. The batch is one broad category (coding, linux, etc.).
+A scattered note may be a line, a group of lines, or a whole file. Within a file, `---` separates notes, unless `phase1-regions.md` overrides that boundary. The batch is one broad category (coding, linux, etc.).
 
 ### `phase1.json`
 
@@ -145,6 +148,52 @@ about should focus on bubble vs merge complexity, not a generic overview
 - `## Shorthand: {token}` — one note for that shorthand **type**. The app shows the **same** comment on every uncertain flag with that token (case-insensitive). Applying it once is enough for all occurrences — update root `shorthands.md`, then clear those uncertain marks on rewrite.
 - `## Enrichment: {file}:{line}` — feedback on a YouTube / fetched-link green added line (`file` is the note filename, `line` is 1-based). Revise that line’s `youtube` or `link` title/about accordingly.
 - Omit empty sections. The app POSTs to `index.php?action=save-phase1-suggestions`. Do not wipe this file when rewriting `phase1.json` unless the user asked to clear suggestions.
+
+### `phase1-regions.md`
+
+User corrections when an automatic note boundary is wrong. May be missing — treat as no corrections. **Read it whenever you group notes or answer a question about which lines are one idea**, including before Phase 2. The app writes it via `index.php?action=save-phase1-regions`. Do not wipe it. Do not re-split a file in a way that ignores these lines.
+
+```markdown
+# Phase 1 regions
+
+## File: braindump.md
+
+### Splits
+
+12
+
+### Joins
+
+40
+```
+
+- `### Splits` — source line numbers that **start a new note** even though no `---` / blank line does.
+- `### Joins` — source line numbers that **stay with the previous note** even though a `---` or blank line would split them.
+- Everywhere else, keep the normal boundary rules below.
+- Line numbers are 1-based and match the note file.
+- The stored file is only the difference from automatic boundaries. Restoring a boundary in the app removes that line; if a file has no remaining splits or joins, the app deletes `phase1-regions.md`.
+
+#### How the app draws a note
+
+Use these same rules when you talk about regions or when you group notes. Do not invent a second segmentation.
+
+- A line of only dashes, length 3 or more (`---`, `------`), is a hard break.
+- A longer matching fence (length 6 or more, used in pairs) keeps shorter dash lines strictly inside that pair as content. Example: an article that already uses `---` is wrapped in `------`.
+- If the file has no unprotected dash break, blank lines are the breaks instead.
+- Leading and trailing blank lines inside a group are not part of the note. Internal blank lines stay.
+- Empty groups between separators are not notes.
+- Each note is one colored region in Phase 1. The map on the right is the whole file.
+- Hues, in order: 199, 152, 42, 270, 330, 12, 88, 230. If the next hue would match the previous note, skip to the one after it. The user does not pick colors. After every split or merge the app reassigns hues so two notes in a row never share a color.
+
+#### What the user can do in Phase 1
+
+On each note header:
+
+- **Split** — then **Split into a new note here** on the line that should start the second idea. **Cancel** or Escape leaves the note unchanged. A one-line note cannot split.
+- **Merge up** — this note becomes part of the note above. The first note has no Merge up.
+- **Merge down** — the next note becomes part of this one. The last note has no Merge down.
+
+The app renumbers notes and rebuilds the map after either change, then saves. Tell the user they can fix a wrong boundary this way before they say Phase 1 looks good.
 
 ### `phase2.json`
 
@@ -392,10 +441,11 @@ WTF is the difference between EXPOSE and publishing -p again
 6. **Preserve** any existing `link.userPaste` / `link.userNote` already saved by the app when rewriting `phase1.json`. If paste text is present for a blocked URL, derive `title`/`about` from it and set `added: true`.
 7. Write/update `phase1.json` with line-level marks, YouTube descriptors, and link enrichments (no placeholder titles).
 8. Set `app.config.json` `"phase": 1`.
-9. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks / green added descriptors / **blocked-URL paste panels** / **in-app Suggest**, and **return to this chat** to:
+9. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks / green added descriptors / **blocked-URL paste panels** / **in-app Suggest** / **numbered note regions and the map**, and **return to this chat** to:
    - explain any flagged shorthand/symbols (chat **or** read `phase1-suggestions.md` shorthand sections — one note covers every flag of that token), or
    - apply enrichment Suggest notes from `phase1-suggestions.md`, or
    - say they pasted blocked-URL text (re-read `phase1.json` and enrich from `userPaste`), or
+   - say a region is wrong — they fix that in the app with **Split** or **Merge up** / **Merge down** (saved to `phase1-regions.md`; colors update automatically and neighboring notes never share a color). Read that file before you group notes again, or
    - say Phase 1 looks good and advance to Phase 2.
 
 **Before rewriting Phase 1 artifacts:** always read `phase1-suggestions.md` if present. For each `## Shorthand:` note, update root `shorthands.md` and remove matching uncertain marks. For each `## Enrichment:` note, revise that line’s `youtube` / `link` fields. Do not wipe `phase1-suggestions.md` unless the user cleared Suggest in the app.
@@ -408,12 +458,13 @@ Only after the user confirms Phase 1 is done:
 
 1. Set `app.config.json` `"phase": 2`.
 2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: tasks|reference|articleCandidates` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`**, and applying whole-section guidance (tagging / heading style / ordering) as needed.
-3. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
-4. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
-5. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
-6. Account for every line in `blame` — fidelity first; do not silently drop details.
-7. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md`.
-8. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
+3. Read `phase1-regions.md` if it exists. A listed split starts a new note at that line; a listed join keeps that line with the previous note. Apply `---` / blank-line boundaries everywhere else. Do not wipe `phase1-regions.md`.
+4. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
+5. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
+6. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
+7. Account for every line in `blame` — fidelity first; do not silently drop details.
+8. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md` or `phase1-regions.md`.
+9. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
    - **green-check** items as they review;
    - **add tags** or **move items** between Scattered / Reference / Articles (and rearrange within a panel);
    - those panel edits **save into `phase2.json`** via the PHP endpoint so this chat can see them later;
@@ -459,11 +510,11 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 4. If “See the app with no folder selected”: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`; empty-state preview only — they still must pick a folder or select sample afterward; re-offer folders.
 5. If another / switch folder: update `app.config.json` to that folder phase 1.
 6. Read root `shorthands.md` before any uncertainty marks.
-7. Never treat root `shorthands.md` / `phase1.json` / `phase1-suggestions.md` / `phase2.json` / `phase2-suggestions.md` as source notes.
+7. Never treat root `shorthands.md` / `phase1.json` / `phase1-suggestions.md` / `phase1-regions.md` / `phase2.json` / `phase2-suggestions.md` as source notes.
 8. Phase 1 artifacts must be visible in the app after refresh.
 9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure: prefer blocked `link` panel (or `YouTube (lookup failed)` fallback).
 10. Every non-YouTube URL and every `*.url.txt`: try fetch; set `link` with intent from surrounding text; on failure `blocked: true` and wait for app paste (`userPaste`/`userNote`). Preserve pastes across rewrites. After paste: derive `title`/`about`, set `added: true`.
-11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; do not wipe that file unless cleared in the app.
+11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits and joins (same rules as the Phase 1 app: dash breaks, `------` fences, blank lines only when there is no dash break, automatic recolor so neighbors differ). Do not wipe it.
 12. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file.
 13. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`. Link items reuse Phase 1 `link.title` / `link.about` when added.
 14. Phase 2: every line in every note file appears in `blame`.

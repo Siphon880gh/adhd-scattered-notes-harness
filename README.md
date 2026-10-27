@@ -19,7 +19,7 @@ If you have ADHD, notes rarely land in one place. You jot something in a `.txt` 
 
 This harness is for that chaotic, on-the-fly jotting of a fast ADHD brain: dump first, then let AI sort it into something usable—**actionable** tasks or **referable** knowledge.
 
-It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Empty lines or dashes (`---`) as dividers are fine—AI is there to figure out the boundaries and group related thoughts. You can even paste an entire article into a note full of other random thoughts, as long as you made a reasonable effort to mark it as a different idea (separated by empty lines or dashes). If the article already has dash lines, add twice the dash lines to separate the article from your other thoughts (e.g. article uses `---` → wrap it with `------`).
+It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Empty lines or dashes (`---`) as dividers are fine—the app draws those as separate colored notes, and the skill groups from the same boundaries. You can even paste an entire article into a note full of other random thoughts, as long as you made a reasonable effort to mark it as a different idea (separated by empty lines or dashes). If the article already has dash lines, add twice the dash lines to separate the article from your other thoughts (e.g. article uses `---` → wrap it with `------`). If a region is still wrong, redraw it in Phase 1 (Split, or Merge up / Merge down). That correction is saved and the skill follows it.
 
 Shorthands and symbols are welcome too. When something is unclear, AI asks you to clarify, then builds a dictionary of your shorthands (`shorthands.md`) so it can read your notes the way you write them.
 
@@ -58,6 +58,8 @@ inputs/
     note-one.md
     random-thought.txt
     phase1.json              # uncertain marks + YouTube descriptors
+    phase1-suggestions.md    # optional: shorthand and enrichment Suggest notes
+    phase1-regions.md        # optional: your Split / Merge corrections to note boundaries
     phase2.json              # organized notes + blame map + tags (Phase 2/3)
     phase2-suggestions.md    # optional: your Suggest notes for the next Phase 2 pass
 ```
@@ -80,6 +82,15 @@ inputs/
 The skill reads the app-wide `shorthands.md` (project root) first, then marks unclear symbols and shorthand. YouTube links get a green “added” descriptor (title / what the video is about) inferred from the video’s title, description, and comments—no watching required.
 
 Review marks in `index.php`. Explain shorthand in the agent chat; the skill updates root `shorthands.md` and refreshes `phase1.json`. Reload the app to see updates.
+
+The same screen numbers each distinct note and shows the whole file on a map at the right. A line that is only `---` starts a new note (a longer `------` fence keeps shorter dashes inside that note). A file with no dash break is split on blank lines. Neighboring notes never share a color.
+
+If the AI’s boundary is wrong:
+
+- **Split** — then choose the line where the second idea starts
+- **Merge up** or **Merge down** — those notes are one idea
+
+Colors are reassigned automatically. The edit is saved to `phase1-regions.md`. The skill reads that file before it groups notes and does not throw the correction away. Putting the boundary back removes the saved edit.
 
 ### Phase 2 — organize with fidelity
 

@@ -780,7 +780,8 @@ body.is-showing-shortcuts .app-header__menu > svg {
 
 .thought__head {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.55rem;
   min-width: 0;
   padding: 0.4rem 0.65rem 0.15rem;
@@ -804,11 +805,67 @@ body.is-showing-shortcuts .app-header__menu > svg {
 }
 
 .thought__preview {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink-muted);
+}
+
+.thought__actions {
+  margin-left: auto;
+  display: flex;
+  flex: none;
+  gap: 0.3rem;
+}
+
+.thought__action {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.16rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.thought__action:hover:not(:disabled) {
+  border-color: hsl(var(--thought-hue) 45% 48%);
+  color: hsl(var(--thought-hue) 70% 74%);
+}
+
+.thought__action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.thought__action[aria-pressed="true"] {
+  border-color: hsl(var(--thought-hue) 55% 48%);
+  color: hsl(var(--thought-hue) 72% 74%);
+}
+
+.thought-row__split {
+  display: none;
+  width: calc(100% - 1.3rem);
+  margin: 0.15rem 0.65rem 0.2rem;
+  padding: 0.14rem 0.45rem;
+  border: 1px dashed hsl(var(--thought-hue) 42% 46%);
+  border-radius: 4px;
+  background: hsl(var(--thought-hue) 42% 18% / 0.45);
+  color: hsl(var(--thought-hue) 75% 80%);
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thought.is-splitting .thought-row + .thought-row .thought-row__split {
+  display: block;
 }
 
 .layout:has(.minimap) {

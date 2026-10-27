@@ -73,6 +73,7 @@ function list_note_files(string $dir): array
         'shorthands.md' => true,
         'phase2-suggestions.md' => true,
         'phase1-suggestions.md' => true,
+        'phase1-regions.md' => true,
     ];
     $files = [];
 
@@ -472,11 +473,27 @@ function phase1_dash_length(string $text): int
     return strlen($trim);
 }
 
-function phase1_thought_hue(int $id): int
+/**
+ * @return list<int>
+ */
+function phase1_thought_palette(): array
 {
-    $hues = [199, 152, 42, 270, 330, 12, 88, 230];
+    return [199, 152, 42, 270, 330, 12, 88, 230];
+}
 
-    return $hues[($id - 1) % count($hues)];
+/**
+ * Hue for note $id (1-based). Skips the previous note's hue so neighbors differ.
+ */
+function phase1_thought_hue(int $id, ?int $previous = null): int
+{
+    $hues = phase1_thought_palette();
+    $count = count($hues);
+    $hue = $hues[($id - 1) % $count];
+    if ($previous !== null && $hue === $previous) {
+        $hue = $hues[$id % $count];
+    }
+
+    return $hue;
 }
 
 function phase1_thought_preview(string $text, int $max = 84): string
@@ -543,10 +560,15 @@ function phase1_protected_dash_indexes(array $lines): array
  * keeps shorter dash lines inside that note. Files with no dash break split
  * on blank lines instead.
  *
+ * User overrides: `splits` are source line numbers that start a new note even
+ * when the file has no break there. `joins` are source line numbers that stay
+ * with the previous note even when a dash or blank line would split them.
+ *
  * @param list<array<string, mixed>> $lines
+ * @param array{splits?: list<int>, joins?: list<int>} $overrides
  * @return array{mode: string, thoughts: list<array{id: int, start: int, end: int, preview: string, lines: int, hue: int, uncertain: bool, added: bool, blocked: bool, indexes: list<int>}>}
  */
-function phase1_thoughts(array $lines): array
+function phase1_thoughts(array $lines, array $overrides = []): array
 {
     $lines = array_values($lines);
     $protected = phase1_protected_dash_indexes($lines);
@@ -559,6 +581,21 @@ function phase1_thoughts(array $lines): array
         if ($len >= 3 && !isset($protected[$i])) {
             $hasHardBreak = true;
             break;
+        }
+    }
+
+    $splits = [];
+    foreach ($overrides['splits'] ?? [] as $n) {
+        $n = (int) $n;
+        if ($n > 0) {
+            $splits[$n] = true;
+        }
+    }
+    $joins = [];
+    foreach ($overrides['joins'] ?? [] as $n) {
+        $n = (int) $n;
+        if ($n > 0) {
+            $joins[$n] = true;
         }
     }
 
@@ -575,6 +612,12 @@ function phase1_thoughts(array $lines): array
         if ($content === []) {
             $current = [];
             return;
+        }
+        while ($current !== [] && trim((string) ($lines[$current[0]]['text'] ?? '')) === '') {
+            array_shift($current);
+        }
+        while ($current !== [] && trim((string) ($lines[$current[count($current) - 1]]['text'] ?? '')) === '') {
+            array_pop($current);
         }
         $firstText = (string) ($lines[$content[0]]['text'] ?? '');
         $startN = (int) ($lines[$content[0]]['n'] ?? ($content[0] + 1));
@@ -615,7 +658,7 @@ function phase1_thoughts(array $lines): array
             'end' => $endN,
             'preview' => phase1_thought_preview($firstText),
             'lines' => count($current),
-            'hue' => phase1_thought_hue($id),
+            'hue' => 0,
             'uncertain' => $uncertain,
             'added' => $added,
             'blocked' => $blocked,
@@ -624,27 +667,50 @@ function phase1_thoughts(array $lines): array
         $current = [];
     };
 
+    $pendingBoundary = false;
     foreach ($lines as $i => $line) {
         if (!is_array($line)) {
             continue;
         }
         $text = (string) ($line['text'] ?? '');
         $len = phase1_dash_length($text);
-        if ($hasHardBreak) {
-            if ($len >= 3 && !isset($protected[$i])) {
-                $flush();
-                continue;
+        $n = (int) ($line['n'] ?? ($i + 1));
+        $isSeparator = $hasHardBreak
+            ? ($len >= 3 && !isset($protected[$i]))
+            : (trim($text) === '');
+        if ($isSeparator) {
+            if ($current !== []) {
+                $pendingBoundary = true;
             }
-            $current[] = $i;
             continue;
         }
-        if (trim($text) === '') {
+        if ($pendingBoundary && trim($text) === '') {
+            continue;
+        }
+        $forceSplit = isset($splits[$n]);
+        $forceJoin = isset($joins[$n]);
+        $break = false;
+        if ($current !== []) {
+            if ($forceSplit) {
+                $break = true;
+            } elseif ($pendingBoundary && !$forceJoin) {
+                $break = true;
+            }
+        }
+        if ($break) {
             $flush();
-            continue;
         }
+        $pendingBoundary = false;
         $current[] = $i;
     }
     $flush();
+
+    $previousHue = null;
+    foreach ($thoughts as $i => $thought) {
+        $hue = phase1_thought_hue($i + 1, $previousHue);
+        $thoughts[$i]['hue'] = $hue;
+        $previousHue = $hue;
+    }
 
     $mode = $hasHardBreak ? 'dashes' : 'blanks';
 
@@ -1455,6 +1521,240 @@ function save_phase1_suggestions(string $dir, array $data): bool
     }
 
     return file_put_contents($path, $md) !== false;
+}
+
+function phase1_regions_path(string $dir): string
+{
+    return $dir . '/phase1-regions.md';
+}
+
+/**
+ * @param mixed $value
+ * @return list<int>
+ */
+function phase1_region_line_list($value): array
+{
+    if (is_string($value)) {
+        $value = preg_split('/\R/', $value) ?: [];
+    }
+    if (!is_array($value)) {
+        return [];
+    }
+    $nums = [];
+    foreach ($value as $n) {
+        if (is_string($n)) {
+            $n = trim($n);
+        }
+        if (!is_numeric($n)) {
+            continue;
+        }
+        $n = (int) $n;
+        if ($n > 0) {
+            $nums[$n] = $n;
+        }
+    }
+    $list = array_values($nums);
+    sort($list, SORT_NUMERIC);
+
+    return $list;
+}
+
+/**
+ * @param mixed $data
+ * @return array<string, array{splits: list<int>, joins: list<int>}>
+ */
+function normalize_phase1_regions($data): array
+{
+    $out = [];
+    if (!is_array($data)) {
+        return $out;
+    }
+    $files = $data['files'] ?? null;
+    if (!is_array($files)) {
+        return $out;
+    }
+    foreach ($files as $name => $row) {
+        if (!is_string($name) || !is_array($row)) {
+            continue;
+        }
+        $name = basename(str_replace('\\', '/', trim($name)));
+        if ($name === '' || $name === '.' || $name === '..') {
+            continue;
+        }
+        $splits = phase1_region_line_list($row['splits'] ?? []);
+        $joins = phase1_region_line_list($row['joins'] ?? []);
+        $splits = array_values(array_diff($splits, $joins));
+        if ($splits === [] && $joins === []) {
+            continue;
+        }
+        $out[$name] = [
+            'splits' => $splits,
+            'joins' => $joins,
+        ];
+    }
+    ksort($out, SORT_NATURAL | SORT_FLAG_CASE);
+
+    return $out;
+}
+
+function parse_phase1_regions_md(string $raw): array
+{
+    $files = [];
+    $file = '';
+    $section = '';
+    $lines = preg_split('/\R/', $raw) ?: [];
+    foreach ($lines as $line) {
+        if (preg_match('/^## File:\s*(.+?)\s*$/', $line, $m) === 1) {
+            $file = basename(str_replace('\\', '/', trim($m[1])));
+            $section = '';
+            if ($file !== '' && $file !== '.' && $file !== '..' && !isset($files[$file])) {
+                $files[$file] = ['splits' => [], 'joins' => []];
+            }
+            continue;
+        }
+        if ($file === '' || !isset($files[$file])) {
+            continue;
+        }
+        if (preg_match('/^### Splits\s*$/', $line) === 1) {
+            $section = 'splits';
+            continue;
+        }
+        if (preg_match('/^### Joins\s*$/', $line) === 1) {
+            $section = 'joins';
+            continue;
+        }
+        if ($section === '' || preg_match('/^\d+$/', trim($line)) !== 1) {
+            continue;
+        }
+        $files[$file][$section][] = (int) trim($line);
+    }
+
+    return normalize_phase1_regions(['files' => $files]);
+}
+
+/**
+ * @param array<string, array{splits: list<int>, joins: list<int>}> $data
+ */
+function format_phase1_regions_md(array $data): string
+{
+    $data = normalize_phase1_regions(['files' => $data]);
+    $parts = [
+        '# Phase 1 regions',
+        '',
+        'Corrections when a note boundary is wrong. A split starts a new note at that source line. A join keeps that source line in the previous note.',
+        '',
+    ];
+    foreach ($data as $name => $row) {
+        $parts[] = '## File: ' . $name;
+        $parts[] = '';
+        $parts[] = '### Splits';
+        $parts[] = '';
+        foreach ($row['splits'] as $n) {
+            $parts[] = (string) $n;
+        }
+        if ($row['splits'] === []) {
+            $parts[] = '';
+        }
+        $parts[] = '';
+        $parts[] = '### Joins';
+        $parts[] = '';
+        foreach ($row['joins'] as $n) {
+            $parts[] = (string) $n;
+        }
+        $parts[] = '';
+    }
+
+    return rtrim(implode("\n", $parts)) . "\n";
+}
+
+/**
+ * @return array<string, array{splits: list<int>, joins: list<int>}>
+ */
+function load_phase1_regions(string $dir): array
+{
+    $path = phase1_regions_path($dir);
+    if (!is_file($path)) {
+        return [];
+    }
+    $raw = file_get_contents($path);
+    if (!is_string($raw) || trim($raw) === '') {
+        return [];
+    }
+
+    return parse_phase1_regions_md($raw);
+}
+
+/**
+ * @param array<string, array{splits: list<int>, joins: list<int>}> $data
+ */
+function save_phase1_regions(string $dir, array $data): bool
+{
+    $normalized = normalize_phase1_regions(['files' => $data]);
+    $path = phase1_regions_path($dir);
+    if ($normalized === []) {
+        if (is_file($path)) {
+            return unlink($path);
+        }
+
+        return true;
+    }
+
+    return file_put_contents($path, format_phase1_regions_md($normalized)) !== false;
+}
+
+/**
+ * Diff the note starts the user wants against automatic boundaries.
+ *
+ * @param list<array<string, mixed>> $lines
+ * @param list<mixed> $starts
+ * @return array{splits: list<int>, joins: list<int>}
+ */
+function phase1_region_overrides_from_starts(array $lines, array $starts): array
+{
+    $auto = phase1_thoughts($lines);
+    $autoStarts = [];
+    foreach ($auto['thoughts'] as $thought) {
+        $autoStarts[(int) $thought['start']] = true;
+    }
+    $valid = [];
+    foreach ($lines as $i => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $n = (int) ($line['n'] ?? ($i + 1));
+        if ($n > 0) {
+            $valid[$n] = true;
+        }
+    }
+    $want = [];
+    foreach ($starts as $n) {
+        $n = (int) $n;
+        if ($n > 0 && isset($valid[$n])) {
+            $want[$n] = true;
+        }
+    }
+    if ($autoStarts !== []) {
+        $want[(int) min(array_keys($autoStarts))] = true;
+    }
+    $splitList = [];
+    $joinList = [];
+    foreach (array_keys($want) as $n) {
+        if (!isset($autoStarts[$n])) {
+            $splitList[] = (int) $n;
+        }
+    }
+    foreach (array_keys($autoStarts) as $n) {
+        if (!isset($want[$n])) {
+            $joinList[] = (int) $n;
+        }
+    }
+    sort($splitList, SORT_NUMERIC);
+    sort($joinList, SORT_NUMERIC);
+
+    return [
+        'splits' => $splitList,
+        'joins' => $joinList,
+    ];
 }
 
 function snapshots_dir(): string

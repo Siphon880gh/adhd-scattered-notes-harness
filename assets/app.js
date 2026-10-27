@@ -3526,6 +3526,8 @@
     }
 
     root.addEventListener("click", function (e) {
+      if (handlePhase1RegionClick(e)) return;
+
       var suggestToggle = e.target.closest("[data-phase1-suggest-toggle]");
       if (suggestToggle && root.contains(suggestToggle)) {
         var suggestWrap = suggestToggle.closest("[data-phase1-suggest]");
@@ -3570,7 +3572,268 @@
     });
 
     initPhase1Minimap();
+    initPhase1Regions();
   })();
+
+  function phase1Hue(id, previous) {
+    var hues = [199, 152, 42, 270, 330, 12, 88, 230];
+    var hue = hues[(id - 1) % hues.length];
+    if (previous !== null && hue === previous) {
+      hue = hues[id % hues.length];
+    }
+    return hue;
+  }
+
+  function phase1PreviewFrom(row) {
+    if (!row) return "";
+    var texts = qsa(".line__text", row);
+    var text = "";
+    for (var i = 0; i < texts.length; i++) {
+      var line = texts[i].closest(".line");
+      if (line && line.classList.contains("line--added")) continue;
+      text = texts[i].textContent || "";
+      break;
+    }
+    text = text.replace(/\s+/g, " ").trim();
+    if (text.length > 84) {
+      text = text.slice(0, 83).replace(/\s+$/, "") + "…";
+    }
+    return text;
+  }
+
+  function phase1ThoughtHeader() {
+    var header = document.createElement("header");
+    header.className = "thought__head";
+    var index = document.createElement("span");
+    index.className = "thought__index";
+    var range = document.createElement("span");
+    range.className = "thought__range";
+    var preview = document.createElement("span");
+    preview.className = "thought__preview";
+    var actions = document.createElement("div");
+    actions.className = "thought__actions";
+    function action(label, attr, value) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "thought__action";
+      button.textContent = label;
+      button.setAttribute(attr, value);
+      return button;
+    }
+    actions.appendChild(action("Split", "data-thought-split", ""));
+    actions.appendChild(action("Merge up", "data-thought-merge", "prev"));
+    actions.appendChild(action("Merge down", "data-thought-merge", "next"));
+    header.appendChild(index);
+    header.appendChild(range);
+    header.appendChild(preview);
+    header.appendChild(actions);
+    return header;
+  }
+
+  function phase1Sections(doc) {
+    return qsa("section.thought", doc || document);
+  }
+
+  function phase1NewThought() {
+    var section = document.createElement("section");
+    section.className = "thought";
+    section.setAttribute("data-thought", "0");
+    section.appendChild(phase1ThoughtHeader());
+    return section;
+  }
+
+  function phase1Summary(count) {
+    var el = qs("[data-thought-summary]");
+    if (!el) return;
+    if (count === 0) {
+      el.textContent = "No note text in this file yet. The map is this whole file.";
+      return;
+    }
+    var mode = el.getAttribute("data-thought-mode") || "dashes";
+    var noun = count === 1 ? "note" : "notes";
+    var how = mode === "dashes"
+      ? "split on a line of dashes (---)"
+      : "split on blank lines";
+    var text = count + " distinct " + noun + ", " + how + ".";
+    if (el.getAttribute("data-thought-edited") === "1") {
+      text += " Your boundary edits are saved.";
+    }
+    text += " The map is this whole file.";
+    el.textContent = text;
+  }
+
+  function paintPhase1Thoughts() {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc) return [];
+    var sections = phase1Sections(doc);
+    var previous = null;
+    sections.forEach(function (section, i) {
+      var id = i + 1;
+      var hue = phase1Hue(id, previous);
+      previous = hue;
+      section.style.setProperty("--thought-hue", String(hue));
+      section.setAttribute("data-thought", String(id));
+      section.id = "thought-" + id;
+      var rows = qsa(".thought-row", section);
+      var start = rows.length ? rows[0].getAttribute("data-source-line") || "" : "";
+      var end = rows.length ? rows[rows.length - 1].getAttribute("data-source-line") || "" : "";
+      var indexEl = qs(".thought__index", section);
+      if (indexEl) indexEl.textContent = "Note " + id;
+      var rangeEl = qs(".thought__range", section);
+      if (rangeEl) {
+        rangeEl.textContent = start === end ? "line " + start : "lines " + start + "–" + end;
+      }
+      var previewEl = qs(".thought__preview", section);
+      if (previewEl) previewEl.textContent = phase1PreviewFrom(rows[0]);
+      var splitBtn = qs("[data-thought-split]", section);
+      if (splitBtn) {
+        splitBtn.disabled = rows.length < 2;
+        splitBtn.textContent = "Split";
+        splitBtn.setAttribute("aria-pressed", "false");
+      }
+      var up = qs('[data-thought-merge="prev"]', section);
+      var down = qs('[data-thought-merge="next"]', section);
+      if (up) up.disabled = i === 0;
+      if (down) down.disabled = i === sections.length - 1;
+      section.classList.remove("is-splitting");
+    });
+    phase1Summary(sections.length);
+    document.dispatchEvent(new CustomEvent("phase1-regions-changed"));
+    return sections;
+  }
+
+  function clearPhase1SplitMode(except) {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc) return;
+    qsa(".thought.is-splitting", doc).forEach(function (section) {
+      if (except && section === except) return;
+      section.classList.remove("is-splitting");
+      var button = qs("[data-thought-split]", section);
+      if (!button) return;
+      button.textContent = "Split";
+      button.setAttribute("aria-pressed", "false");
+    });
+  }
+
+  var phase1RegionSaveTimer = 0;
+
+  function savePhase1Regions() {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc) return;
+    var file = doc.getAttribute("data-phase1-file") || "";
+    var starts = phase1Sections(doc).map(function (section) {
+      var row = qs(".thought-row", section);
+      return row ? parseInt(row.getAttribute("data-source-line") || "0", 10) : 0;
+    }).filter(function (n) { return n > 0; });
+    fetch("index.php?action=save-phase1-regions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: file, starts: starts }),
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        var summary = qs("[data-thought-summary]");
+        if (!summary) return;
+        if (!data || !data.ok) {
+          summary.setAttribute("data-thought-edited", "0");
+          phase1Summary(phase1Sections(doc).length);
+          summary.textContent = summary.textContent.replace(
+            " The map is this whole file.",
+            " Could not save boundary edits. The map is this whole file."
+          );
+          return;
+        }
+        summary.setAttribute("data-thought-edited", data.edited ? "1" : "0");
+        phase1Summary(phase1Sections(doc).length);
+      })
+      .catch(function () {
+        var summary = qs("[data-thought-summary]");
+        if (!summary || !doc) return;
+        phase1Summary(phase1Sections(doc).length);
+        summary.textContent = summary.textContent.replace(
+          " The map is this whole file.",
+          " Could not save boundary edits. The map is this whole file."
+        );
+      });
+  }
+
+  function commitPhase1Regions() {
+    paintPhase1Thoughts();
+    clearTimeout(phase1RegionSaveTimer);
+    phase1RegionSaveTimer = setTimeout(savePhase1Regions, 120);
+  }
+
+  function handlePhase1RegionClick(e) {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc || !doc.contains(e.target)) return false;
+
+    var splitAt = e.target.closest("[data-thought-split-at]");
+    if (splitAt && doc.contains(splitAt)) {
+      e.preventDefault();
+      var row = splitAt.closest(".thought-row");
+      var section = row ? row.closest("[data-thought]") : null;
+      if (!row || !section || !section.classList.contains("is-splitting")) return true;
+      var rows = qsa(".thought-row", section);
+      if (rows.indexOf(row) <= 0) return true;
+      var created = phase1NewThought();
+      section.after(created);
+      for (var i = rows.indexOf(row); i < rows.length; i++) {
+        created.appendChild(rows[i]);
+      }
+      commitPhase1Regions();
+      return true;
+    }
+
+    var splitBtn = e.target.closest("[data-thought-split]");
+    if (splitBtn && doc.contains(splitBtn)) {
+      e.preventDefault();
+      if (splitBtn.disabled) return true;
+      var splitSection = splitBtn.closest("[data-thought]");
+      if (!splitSection) return true;
+      var opening = !splitSection.classList.contains("is-splitting");
+      clearPhase1SplitMode(null);
+      if (opening) {
+        splitSection.classList.add("is-splitting");
+        splitBtn.textContent = "Cancel";
+        splitBtn.setAttribute("aria-pressed", "true");
+      }
+      return true;
+    }
+
+    var mergeBtn = e.target.closest("[data-thought-merge]");
+    if (mergeBtn && doc.contains(mergeBtn)) {
+      e.preventDefault();
+      if (mergeBtn.disabled) return true;
+      var mergeSection = mergeBtn.closest("[data-thought]");
+      if (!mergeSection) return true;
+      var dir = mergeBtn.getAttribute("data-thought-merge") || "";
+      var sections = phase1Sections(doc);
+      var index = sections.indexOf(mergeSection);
+      var other = dir === "prev" ? sections[index - 1] : sections[index + 1];
+      if (!other) return true;
+      var target = dir === "prev" ? other : mergeSection;
+      var source = dir === "prev" ? mergeSection : other;
+      qsa(".thought-row", source).forEach(function (sourceRow) {
+        target.appendChild(sourceRow);
+      });
+      source.remove();
+      commitPhase1Regions();
+      return true;
+    }
+
+    return false;
+  }
+
+  function initPhase1Regions() {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc) return;
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      if (!qs(".thought.is-splitting", doc)) return;
+      clearPhase1SplitMode(null);
+    });
+    paintPhase1Thoughts();
+  }
 
   function initPhase1Minimap() {
     var map = qs("[data-phase1-minimap]");
@@ -3579,10 +3842,45 @@
     var doc = qs("[data-phase1-lines]");
     if (!map || !track || !viewport || !doc) return;
 
-    var notes = qsa("[data-thought]", doc);
+    var notes = phase1Sections(doc);
     var buttons = qsa("[data-minimap-note]", map);
     var dragging = false;
     var dragOffset = 0;
+
+    function syncMinimapNotes() {
+      notes = phase1Sections(doc);
+      qsa("[data-minimap-note]", map).forEach(function (btn) {
+        btn.remove();
+      });
+      notes.forEach(function (section) {
+        var id = section.getAttribute("data-thought") || "";
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "minimap__note";
+        btn.setAttribute("data-minimap-note", id);
+        var hue = section.style.getPropertyValue("--thought-hue").trim();
+        if (hue) btn.style.setProperty("--thought-hue", hue);
+        if (qs(".line--uncertain", section)) btn.classList.add("has-uncertain");
+        if (qs(".line--added", section)) btn.classList.add("has-added");
+        if (qs(".url-block", section)) btn.classList.add("has-blocked");
+        var indexText = qs(".thought__index", section);
+        var rangeText = qs(".thought__range", section);
+        var previewText = qs(".thought__preview", section);
+        var tip = [indexText, rangeText, previewText].map(function (el) {
+          return el ? (el.textContent || "").trim() : "";
+        }).filter(Boolean).join(" · ");
+        btn.title = tip;
+        btn.setAttribute("aria-label", tip || ("Note " + id));
+        var label = document.createElement("span");
+        label.className = "minimap__note-label";
+        label.textContent = id;
+        btn.appendChild(label);
+        track.insertBefore(btn, viewport);
+      });
+      buttons = qsa("[data-minimap-note]", map);
+      var count = qs(".minimap__title span", map);
+      if (count) count.textContent = String(notes.length);
+    }
 
     function chromeOffset() {
       var header = qs(".app-header");
@@ -3660,14 +3958,14 @@
       markCurrent();
     }
 
-    buttons.forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var id = btn.getAttribute("data-minimap-note") || "";
-        var section = qs('[data-thought="' + id.replace(/"/g, "") + '"]', doc);
-        if (!section) return;
-        var top = section.getBoundingClientRect().top + window.scrollY - chromeOffset();
-        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-      });
+    track.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-minimap-note]");
+      if (!btn || !track.contains(btn)) return;
+      var id = btn.getAttribute("data-minimap-note") || "";
+      var section = qs('[data-thought="' + id.replace(/"/g, "") + '"]', doc);
+      if (!section) return;
+      var top = section.getBoundingClientRect().top + window.scrollY - chromeOffset();
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
     });
 
     viewport.addEventListener("mousedown", function (e) {
@@ -3699,6 +3997,10 @@
       placeViewport();
       markCurrent();
     }, { passive: true });
+    document.addEventListener("phase1-regions-changed", function () {
+      syncMinimapNotes();
+      refresh();
+    });
     window.addEventListener("resize", refresh);
     refresh();
   }

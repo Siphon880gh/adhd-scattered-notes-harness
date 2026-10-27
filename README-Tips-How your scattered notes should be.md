@@ -14,7 +14,7 @@ It does not matter if:
 - Each line is a different idea
 - A whole document is broken up with empty lines
 
-Empty lines or dashes (`---`) as dividers are fine—AI is there to figure out the boundaries and group related thoughts.
+Empty lines or dashes (`---`) as dividers are fine—the app draws those as separate notes, and the skill groups from the same boundaries. If a region is wrong, Split or Merge it in Phase 1; that correction is saved in `phase1-regions.md` and the skill follows it.
 
 ## Pasting articles next to other thoughts
 
