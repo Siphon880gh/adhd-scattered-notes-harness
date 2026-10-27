@@ -3321,26 +3321,29 @@
       );
     }
 
+    function syncSuggestInputValue(input, text) {
+      if (!input || input === document.activeElement) return;
+      if (input.value !== text) input.value = text;
+    }
+
     function syncShorthandUi(token, text) {
-      var trimmed = String(text || "").trim();
-      var has = !!trimmed;
+      var has = !!String(text || "").trim();
       shorthandInputsForToken(token).forEach(function (input) {
-        if (input.value !== text) input.value = text;
+        syncSuggestInputValue(input, text);
         var wrap = input.closest("[data-phase1-shorthand-wrap]");
         if (wrap) wrap.classList.toggle("has-phase1-suggestion", has);
       });
     }
 
     function syncEnrichmentUi(key, text) {
-      var trimmed = String(text || "").trim();
-      var has = !!trimmed;
+      var has = !!String(text || "").trim();
       qsa(
         '[data-phase1-suggest-input][data-phase1-suggest-kind="enrichment"][data-phase1-suggest-key="' +
           String(key).replace(/"/g, "") +
           '"]',
         root
       ).forEach(function (input) {
-        if (input.value !== text) input.value = text;
+        syncSuggestInputValue(input, text);
       });
       qsa('[data-phase1-enrichment-wrap="' + String(key).replace(/"/g, "") + '"]', root).forEach(
         function (wrap) {
@@ -3377,7 +3380,7 @@
       if (trimmed) {
         phase1SuggestState.shorthands[storedKey || key] = trimmed;
       }
-      syncShorthandUi(key, trimmed ? trimmed : "");
+      syncShorthandUi(key, String(text || ""));
       schedulePhase1SuggestSave();
     }
 
@@ -3389,7 +3392,7 @@
       } else {
         delete phase1SuggestState.enrichments[id];
       }
-      syncEnrichmentUi(id, trimmed ? trimmed : "");
+      syncEnrichmentUi(id, String(text || ""));
       schedulePhase1SuggestSave();
     }
 
