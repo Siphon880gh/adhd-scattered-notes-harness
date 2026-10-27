@@ -2,6 +2,19 @@
     "organized": {
         "tasks": [
             {
+                "id": "t9",
+                "title": "Task: Drafts for a published notes site",
+                "body": "Many of these notes were drafts for one of Weng's published note sites, such as codernotes.wengindustries.com.\n\nThey were captured in UpNote. Final writing was done in Obsidian, before the deployment scripts were run.",
+                "sources": [
+                    "0-preface.md:1",
+                    "0-preface.md:3"
+                ],
+                "tags": [
+                    "publishing"
+                ],
+                "checked": false
+            },
+            {
                 "id": "t1",
                 "title": "Task: Compare nginx -t with reload / restart",
                 "body": "Compare `nginx -t` (config test / validate) with the other commands:\n- `nginx -s reload` — reload config without dropping connections\n- restart (e.g. `systemctl restart nginx`) — full process restart\n\nWhat does `-t` actually validate vs what reload/restart do?\n\n(Shorthand: wtf = go find out)",
@@ -201,6 +214,33 @@
         ]
     },
     "blame": {
+        "0-preface.md": [
+            {
+                "n": 1,
+                "text": "Many of these notes were drafts for one of Weng's published note sites, such as codernotes.wengindustries.com.",
+                "fate": "mapped",
+                "to": [
+                    "t9"
+                ],
+                "comment": "drafts headed for a published notes site"
+            },
+            {
+                "n": 2,
+                "text": "",
+                "fate": "dropped_noise",
+                "to": [],
+                "comment": "blank line"
+            },
+            {
+                "n": 3,
+                "text": "They were captured in UpNote. Final writing was done in Obsidian, before the deployment scripts were run.",
+                "fate": "merged",
+                "to": [
+                    "t9"
+                ],
+                "comment": "capture in UpNote, finish in Obsidian, then deploy"
+            }
+        ],
         "braindump.md": [
             {
                 "n": 1,
@@ -511,6 +551,17 @@
         ]
     },
     "filterLayout": [
+        {
+            "type": "heading",
+            "name": "About"
+        },
+        {
+            "type": "tag",
+            "name": "publishing"
+        },
+        {
+            "type": "divider"
+        },
         {
             "type": "heading",
             "name": "Servers"

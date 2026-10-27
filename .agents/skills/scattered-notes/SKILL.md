@@ -277,13 +277,13 @@ Selecting sample is never “open whatever is already there” — **Reset sampl
 
 - **If they choose “Reset sample and select it”:**
   1. Delete the entire `inputs/sample/` directory if it exists.
-  2. Recreate `inputs/sample/` with only the five note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
+  2. Recreate `inputs/sample/` with only the six note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
   3. Write `app.config.json` with `"inputFolder": "sample"` and `"phase": 1`.
   4. Continue with Phase 1 on `sample`.
 
 - **If they choose “See the app with no folder selected”:**
   1. Delete the entire `inputs/sample/` directory if it exists.
-  2. Recreate `inputs/sample/` with only the five note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
+  2. Recreate `inputs/sample/` with only the six note files below (exact contents). Do **not** write `phase1.json` or `phase2.json`.
   3. Write `app.config.json` with `"inputFolder": ""` and `"phase": 1` (no project selected).
   4. Tell them to open `index.php` to see the empty-state screen. Remind them this is only a preview — they still must pick a folder or say they want to select sample before the app can show notes/artifacts. Stop and re-offer folder options (without auto-continuing into Phase 1).
 
@@ -307,6 +307,14 @@ Selecting sample is never “open whatever is already there” — **Reset sampl
   1. Tell them to create `inputs/{name}/` and add notes, then re-run.
 
 #### Sample note templates (recreate exactly; no phase JSON)
+
+`inputs/sample/0-preface.md`:
+
+```markdown
+Many of these notes were drafts for one of Weng's published note sites, such as codernotes.wengindustries.com.
+
+They were captured in UpNote. Final writing was done in Obsidian, before the deployment scripts were run.
+```
 
 `inputs/sample/a.url.txt`:
 
@@ -447,7 +455,7 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 
 1. On every start: read `app.config.json`, list `inputs/` folders, detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3), announce state, then offer the matching option set from §0.
 2. Mid-session: offer **Continue** first (phase 2 wording: review parse fidelity — nothing dropped; invite **Suggest** for notes that should change); Final: offer **Continue (phase 3, locked)** first — filter/copy exit — and remind **“Revert to Phase 2”** then refresh unlocks Suggest again. Do not wipe an in-progress or finished batch unless they choose a reset/switch.
-3. If reset sample + select: delete `inputs/sample/`, recreate note files only (five files including `a.url.txt` / `b.url.txt`; no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
+3. If reset sample + select: delete `inputs/sample/`, recreate note files only (six files including `0-preface.md`, `a.url.txt`, and `b.url.txt`; no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
 4. If “See the app with no folder selected”: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`; empty-state preview only — they still must pick a folder or select sample afterward; re-offer folders.
 5. If another / switch folder: update `app.config.json` to that folder phase 1.
 6. Read root `shorthands.md` before any uncertainty marks.

@@ -1,5 +1,24 @@
 {
     "files": {
+        "0-preface.md": {
+            "lines": [
+                {
+                    "n": 1,
+                    "text": "Many of these notes were drafts for one of Weng's published note sites, such as codernotes.wengindustries.com.",
+                    "marks": []
+                },
+                {
+                    "n": 2,
+                    "text": "",
+                    "marks": []
+                },
+                {
+                    "n": 3,
+                    "text": "They were captured in UpNote. Final writing was done in Obsidian, before the deployment scripts were run.",
+                    "marks": []
+                }
+            ]
+        },
         "braindump.md": {
             "lines": [
                 {
