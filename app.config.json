@@ -1,4 +1,12 @@
 {
-  "inputFolder": "sort-scattered",
-  "phase": 1
+    "inputFolder": "sort-scattered",
+    "phase": 1,
+    "projects": {
+        "sample": {
+            "phase": 3
+        },
+        "sort-scattered": {
+            "phase": 1
+        }
+    }
 }

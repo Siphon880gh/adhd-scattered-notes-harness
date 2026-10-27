@@ -3,11 +3,49 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/includes/bootstrap.php';
 
-$config = load_config();
+$config = ensure_project_registry();
 $folder = $config['inputFolder'];
 $phase = $config['phase'];
 $dir = $folder !== '' ? input_dir($folder) : '';
 $folderExists = $folder !== '' && is_dir($dir);
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'switch-project'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    $name = basename(str_replace('\\', '/', trim((string) (is_array($payload) ? ($payload['folder'] ?? '') : ''))));
+    $known = list_input_projects();
+    if ($name === '' || !in_array($name, $known, true)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Unknown project folder.']);
+        exit;
+    }
+
+    $projects = $config['projects'];
+    if ($folder !== '' && in_array($folder, $known, true)) {
+        $projects[$folder] = ['phase' => $phase];
+    }
+    $nextPhase = isset($projects[$name]['phase'])
+        ? normalize_phase((int) $projects[$name]['phase'])
+        : infer_project_phase($name);
+    if (!save_app_config($name, $nextPhase, $projects)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write app.config.json.']);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'folder' => $name,
+        'phase' => $nextPhase,
+    ]);
+    exit;
+}
 
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST'
@@ -695,6 +733,40 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php endif; ?>
     </div>
     <div class="app-header__actions">
+        <?php $inputProjects = list_input_projects(); ?>
+        <div class="app-header__projects" data-projects-menu data-current-project="<?= e($liveFolder) ?>">
+            <button type="button"
+                    class="app-header__btn"
+                    data-projects-toggle
+                    aria-expanded="false"
+                    aria-haspopup="true"
+                    title="Switch the input folder this app is showing">
+                Projects<?= $inputProjects !== [] ? ' (' . count($inputProjects) . ')' : '' ?>
+            </button>
+            <div class="app-header__projects-panel" data-projects-panel hidden>
+                <div class="app-header__projects-head">Projects</div>
+                <?php if ($inputProjects === []): ?>
+                    <p class="app-header__projects-empty muted">No folders under <code>inputs/</code> yet.</p>
+                <?php else: ?>
+                    <ul class="app-header__projects-list">
+                        <?php foreach ($inputProjects as $projectName):
+                            $projectPhase = project_phase_for($config, $projectName);
+                            $projectCurrent = $projectName === $liveFolder;
+                            ?>
+                            <li>
+                                <button type="button"
+                                        class="app-header__projects-link<?= $projectCurrent ? ' is-active' : '' ?>"
+                                        data-switch-project="<?= e($projectName) ?>"
+                                        <?php if ($projectCurrent): ?>aria-current="true"<?php endif; ?>>
+                                    <span class="app-header__projects-name">inputs/<?= e($projectName) ?></span>
+                                    <span class="app-header__projects-meta muted">Phase <?= (int) $projectPhase ?></span>
+                                </button>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        </div>
         <?php if (!$isSnapshotView && $liveFolder !== '' && $livePhase === 3 && is_file(input_dir($liveFolder) . '/phase2.json')): ?>
             <button type="button" class="app-header__btn" data-save-snapshot title="Save Phase 3 as a named snapshot">
                 Save snapshot as
@@ -827,6 +899,19 @@ $isSnapshotView = $viewingSnapshot !== null;
             </li>
             <li>Refresh this page to review Phase 1 artifacts. At each phase, the AI will update its suggestions in this view until the notes become useful.</li>
         </ol>
+        <?php if ($inputProjects !== []): ?>
+            <p>Or open a project that is already on disk:</p>
+            <ul class="project-picker">
+                <?php foreach ($inputProjects as $projectName): ?>
+                    <li>
+                        <button type="button" class="app-header__btn" data-switch-project="<?= e($projectName) ?>">
+                            inputs/<?= e($projectName) ?>
+                            <span class="muted">Phase <?= (int) project_phase_for($config, $projectName) ?></span>
+                        </button>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
         <p class="muted">
             Return to Cursor or Claude Code to continue the skill chat after you have notes ready in an input folder.
         </p>

@@ -4005,6 +4005,73 @@
     refresh();
   }
 
+  // --- Project switcher ---
+  (function initProjects() {
+    var menu = qs("[data-projects-menu]");
+    var toggle = qs("[data-projects-toggle]");
+    var panel = qs("[data-projects-panel]");
+
+    function setProjectsOpen(open) {
+      if (!toggle || !panel) return;
+      panel.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    if (toggle && panel) {
+      toggle.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var willOpen = panel.hidden;
+        if (willOpen) {
+          var snapPanel = qs("[data-snapshots-panel]");
+          var snapToggle = qs("[data-snapshots-toggle]");
+          if (snapPanel) snapPanel.hidden = true;
+          if (snapToggle) snapToggle.setAttribute("aria-expanded", "false");
+        }
+        setProjectsOpen(willOpen);
+      });
+    }
+
+    document.addEventListener("click", function (e) {
+      var button = e.target.closest("[data-switch-project]");
+      if (button) {
+        e.preventDefault();
+        var name = button.getAttribute("data-switch-project") || "";
+        var current = menu ? menu.getAttribute("data-current-project") || "" : "";
+        var onSnapshot = /[?&]snapshot=/.test(window.location.search);
+        if (name !== "" && name === current && !onSnapshot) {
+          setProjectsOpen(false);
+          return;
+        }
+        button.disabled = true;
+        fetch("index.php?action=switch-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: name }),
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              if (!res.ok || !data || !data.ok) {
+                throw new Error((data && data.error) || "Could not switch project");
+              }
+              window.location.href = "index.php";
+            });
+          })
+          .catch(function (err) {
+            button.disabled = false;
+            showAppToast(err && err.message ? err.message : "Could not switch project");
+          });
+        return;
+      }
+      if (!menu || !e.target.closest("[data-projects-menu]")) {
+        setProjectsOpen(false);
+      }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") setProjectsOpen(false);
+    });
+  })();
+
   // --- Phase 3 snapshots ---
   (function initSnapshots() {
     var menu = qs("[data-snapshots-menu]");
@@ -4036,7 +4103,14 @@
     if (toggle && panel) {
       toggle.addEventListener("click", function (e) {
         e.stopPropagation();
-        setSnapshotsOpen(panel.hidden);
+        var willOpen = panel.hidden;
+        if (willOpen) {
+          var projectPanel = qs("[data-projects-panel]");
+          var projectToggle = qs("[data-projects-toggle]");
+          if (projectPanel) projectPanel.hidden = true;
+          if (projectToggle) projectToggle.setAttribute("aria-expanded", "false");
+        }
+        setSnapshotsOpen(willOpen);
       });
       document.addEventListener("click", function (e) {
         if (!menu || !e.target.closest("[data-snapshots-menu]")) {

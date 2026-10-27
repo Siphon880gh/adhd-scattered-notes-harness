@@ -33,7 +33,7 @@ See also: [README-Tips-How your scattered notes should be.md](README-Tips-How%20
 | `app.config.json` | Points the app at one `inputs/` folder and the active phase |
 | `index.php` | Phase 1 reviewer + Phase 2/3 interactive organizer (saves into `phase2.json`) |
 
-There is **no folder switcher in the app**. The skill sets `app.config.json`; the app shows whatever that file points at.
+Each folder under `inputs/` is a separate project. Use **Projects** in the app header to switch (for example `inputs/sort-scattered` and `inputs/sample`). That writes `app.config.json` and restores the phase that project was last on. Snapshots stay available from either project. The skill can also point the file at a folder.
 
 ## Setup
 
@@ -69,11 +69,15 @@ inputs/
 ```json
 {
   "inputFolder": "whatname",
-  "phase": 1
+  "phase": 1,
+  "projects": {
+    "whatname": { "phase": 1 },
+    "sample": { "phase": 3 }
+  }
 }
 ```
 
-`phase` may be `1`, `2`, or `3`.
+`phase` may be `1`, `2`, or `3`. It is the phase of `inputFolder`. `projects` remembers the phase of every other folder so switching projects does not reset them. When you change `app.config.json`, keep `projects` and set `projects[inputFolder].phase` to the phase you are writing.
 
 ## Three phases
 

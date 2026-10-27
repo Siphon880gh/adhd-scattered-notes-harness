@@ -12,7 +12,7 @@ description: >-
 
 # Scattered Notes Harness
 
-This skill runs in **Cursor or Claude Code**. The PHP app (`index.php`) is an artifact container: write artifacts here, tell the user to review in the browser, then continue in chat. Do not switch folders inside the app—only via `app.config.json`.
+This skill runs in **Cursor or Claude Code**. The PHP app (`index.php`) is an artifact container: write artifacts here, tell the user to review in the browser, then continue in chat. Each folder under `inputs/` is its own project. The app’s **Projects** menu switches the live folder and restores that project’s phase by writing `app.config.json`. You may also switch by writing that file.
 
 ## Product framing (verbatim)
 
@@ -46,7 +46,13 @@ Project root:
 
 | File | Role |
 |------|------|
-| `app.config.json` | `{ "inputFolder": "{folder}" \| "", "phase": 1 \| 2 \| 3 }` — skill owns this; empty `inputFolder` means no project selected |
+| `app.config.json` | Live project plus a `projects` map of each folder’s phase. Empty `inputFolder` means no project selected. The app’s Projects menu and this skill both write it. Preserve `projects` when you update the file. |
+
+When you write `app.config.json`:
+
+- Set `inputFolder` and `phase` for the project you are opening or advancing.
+- Keep the existing `projects` object. Set `projects["{inputFolder}"].phase` to that same phase. Do not drop other folders’ phases.
+- The app’s **Projects** menu does this too. On the next start, read the file again — the user may have switched projects in the browser. Snapshots are not a project switch; they are saved Phase 3 views and do not change `inputFolder`.
 | `shorthands.md` | App-wide glossary — **always read before marking uncertainty**; shared by every batch |
 
 Skip when reading notes: `phase1.json`, `phase1-suggestions.md`, `phase1-regions.md`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
@@ -316,7 +322,7 @@ Announce the detected state briefly (e.g. “Active: `inputs/sample` · phase 2 
 **C. Final session (phase 3)** — offer:
 
 1. **Continue `{folder}` (phase 3, locked)** — keep config; remind them the app is for **filter + copy** into their permanent notes app. Re-read `phase2.json` and refine tags only if they ask. No Suggest / green-check loop. Also remind: they can always say **“Revert to Phase 2”** in chat, then refresh the app, to unlock Suggest / green-check again.
-2. **Revert to Phase 2** — set `app.config.json` `"phase": 2` (keep `inputFolder` and `phase2.json`); tell them to refresh the app so Suggest / green-check return.
+2. **Revert to Phase 2** — set `app.config.json` `"phase": 2` and `projects["{inputFolder}"].phase` to `2` (keep `inputFolder`, the rest of `projects`, and `phase2.json`); tell them to refresh the app so Suggest / green-check return.
 3. **Start a new batch** — then offer A’s folder picks (reset sample + select, other folders, or create new notes). Do not wipe the finished folder unless they explicitly ask.
 4. **Reset sample and select it** — same as A.1.
 5. **See the app with no folder selected** — same as A.2 (empty-state preview only; you still must pick a folder or select sample afterward).
