@@ -1766,6 +1766,20 @@ a.note-link:focus-visible {
   background: rgba(110, 181, 255, 0.12);
 }
 
+.mark-chip-wrap.has-phase1-suggestion .phase1-suggest__toggle::after,
+.line--added.has-phase1-suggestion .phase1-suggest__toggle::after,
+.item-card.has-suggestion .item-card__suggest-toggle::after,
+.section-block.has-panel-suggestion .section-block__suggest-toggle::after {
+  content: "";
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.05rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .phase1-suggest {
   display: inline-flex;
   flex-direction: column;
