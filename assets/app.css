@@ -2243,6 +2243,10 @@ a.note-link:focus-visible {
   text-overflow: ellipsis;
 }
 
+.bucket-counts__jump.is-handled {
+  display: none;
+}
+
 .bucket-counts__jump:hover,
 .bucket-counts__jump:focus-visible {
   background: rgba(110, 181, 255, 0.16);

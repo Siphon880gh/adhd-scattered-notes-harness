@@ -1010,18 +1010,153 @@ function phase1_thoughts(array $lines, array $overrides = []): array
 }
 
 /**
+ * Uncertain tokens on one source line.
+ *
+ * @param array<string, mixed> $line
+ * @return array{has: bool, tokens: list<string>, tokenless: bool}
+ */
+function phase1_uncertain_parts(array $line): array
+{
+    $tokens = [];
+    $tokenless = false;
+    $has = false;
+    $marks = $line['marks'] ?? [];
+    if (!is_array($marks)) {
+        return ['has' => false, 'tokens' => [], 'tokenless' => false];
+    }
+    foreach ($marks as $mark) {
+        if (!is_array($mark) || ($mark['type'] ?? '') !== 'uncertain') {
+            continue;
+        }
+        $has = true;
+        $token = phase1_shorthand_key((string) ($mark['token'] ?? ''));
+        if ($token === '') {
+            $tokenless = true;
+            continue;
+        }
+        if (!in_array($token, $tokens, true)) {
+            $tokens[] = $token;
+        }
+    }
+
+    return ['has' => $has, 'tokens' => $tokens, 'tokenless' => $tokenless];
+}
+
+function phase1_line_suggestion_text(array $suggestions, string $file, int $line): string
+{
+    $suggestions = normalize_phase1_suggestions($suggestions);
+
+    return trim((string) ($suggestions['lines'][$file . ':' . $line] ?? ''));
+}
+
+/**
+ * A shorthand line leaves Needs attention once every flagged token has a Suggest
+ * note, or the line itself has a comment.
+ *
+ * @param list<string> $tokens
+ * @param array<string, mixed> $suggestions
+ */
+function phase1_uncertain_handled(string $file, int $line, array $tokens, bool $tokenless, array $suggestions): bool
+{
+    if (phase1_line_suggestion_text($suggestions, $file, $line) !== '') {
+        return true;
+    }
+    if ($tokenless || $tokens === []) {
+        return false;
+    }
+    foreach ($tokens as $token) {
+        if (trim(phase1_shorthand_suggestion($suggestions, (string) $token)) === '') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * A blocked URL leaves Needs attention once that line has a comment or a saved paste.
+ *
+ * @param array<string, mixed> $suggestions
+ */
+function phase1_blocked_handled(string $file, int $line, bool $pasted, array $suggestions): bool
+{
+    if (phase1_line_suggestion_text($suggestions, $file, $line) !== '') {
+        return true;
+    }
+
+    return $pasted;
+}
+
+/**
+ * Every Needs-attention item, so the page can drop one as soon as it is handled.
+ *
  * @param array<string, mixed>|null $phase1
  * @param list<string> $noteFiles
+ * @return list<array<string, mixed>>
+ */
+function phase1_attention_catalog(?array $phase1, array $noteFiles): array
+{
+    $items = [];
+    if (!is_array($phase1) || !isset($phase1['files']) || !is_array($phase1['files'])) {
+        return $items;
+    }
+    $files = $phase1['files'];
+    foreach ($noteFiles as $file) {
+        $fileData = $files[$file] ?? null;
+        if (!is_array($fileData) || !is_array($fileData['lines'] ?? null)) {
+            continue;
+        }
+        foreach ($fileData['lines'] as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $n = (int) ($line['n'] ?? 0);
+            if ($n < 1) {
+                continue;
+            }
+            $parts = phase1_uncertain_parts($line);
+            if ($parts['has']) {
+                $items[] = [
+                    'file' => $file,
+                    'line' => $n,
+                    'kind' => 'uncertain',
+                    'tokens' => $parts['tokens'],
+                    'tokenless' => $parts['tokenless'],
+                ];
+            }
+            $link = $line['link'] ?? null;
+            if (is_array($link) && !empty($link['blocked'])) {
+                $pasted = trim((string) ($link['userPaste'] ?? '')) !== ''
+                    || trim((string) ($link['userNote'] ?? '')) !== '';
+                $items[] = [
+                    'file' => $file,
+                    'line' => $n,
+                    'kind' => 'blocked',
+                    'pasted' => $pasted,
+                ];
+            }
+        }
+    }
+
+    return $items;
+}
+
+/**
+ * @param array<string, mixed>|null $phase1
+ * @param list<string> $noteFiles
+ * @param array<string, mixed> $suggestions
  * @return array{files: int, uncertain: int, youtube: int, links: int, blocked: int}
  */
-function phase1_review_counts(?array $phase1, array $noteFiles): array
+function phase1_review_counts(?array $phase1, array $noteFiles, array $suggestions = []): array
 {
+    $suggestions = normalize_phase1_suggestions($suggestions);
     $uncertain = 0;
     $youtube = 0;
     $links = 0;
     $blocked = 0;
     if (is_array($phase1) && isset($phase1['files']) && is_array($phase1['files'])) {
-        foreach ($phase1['files'] as $fileData) {
+        foreach ($phase1['files'] as $fileName => $fileData) {
+            $fileName = (string) $fileName;
             if (!is_array($fileData)) {
                 continue;
             }
@@ -1033,14 +1168,10 @@ function phase1_review_counts(?array $phase1, array $noteFiles): array
                 if (!is_array($line)) {
                     continue;
                 }
-                $marks = $line['marks'] ?? [];
-                if (is_array($marks)) {
-                    foreach ($marks as $mark) {
-                        if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
-                            $uncertain++;
-                            break;
-                        }
-                    }
+                $n = (int) ($line['n'] ?? 0);
+                $parts = phase1_uncertain_parts($line);
+                if ($parts['has'] && !phase1_uncertain_handled($fileName, $n, $parts['tokens'], $parts['tokenless'], $suggestions)) {
+                    $uncertain++;
                 }
                 $yt = $line['youtube'] ?? null;
                 if (is_array($yt) && !empty($yt['added'])) {
@@ -1049,7 +1180,11 @@ function phase1_review_counts(?array $phase1, array $noteFiles): array
                 $link = $line['link'] ?? null;
                 if (is_array($link)) {
                     if (!empty($link['blocked'])) {
-                        $blocked++;
+                        $pasted = trim((string) ($link['userPaste'] ?? '')) !== ''
+                            || trim((string) ($link['userNote'] ?? '')) !== '';
+                        if (!phase1_blocked_handled($fileName, $n, $pasted, $suggestions)) {
+                            $blocked++;
+                        }
                     }
                     if (!empty($link['added'])) {
                         $links++;
@@ -1094,10 +1229,12 @@ function phase1_jump_href(string $file, string $activeFile, string $anchor, int 
  *
  * @param array<string, mixed>|null $phase1
  * @param list<string> $noteFiles
- * @return array<string, list<array{text: string, title: string, href: string, id: string}>>
+ * @param array<string, mixed> $suggestions
+ * @return array<string, list<array<string, mixed>>>
  */
-function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFile, int $previewPhase = 0): array
+function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFile, int $previewPhase = 0, array $suggestions = []): array
 {
+    $suggestions = normalize_phase1_suggestions($suggestions);
     $many = count($noteFiles) > 1;
     $jumps = [
         'files' => [],
@@ -1127,20 +1264,14 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
             $text = (string) ($line['text'] ?? '');
             $where = ($many ? $file . ' · ' : '') . 'line ' . $n;
 
-            $tokens = [];
-            $marks = $line['marks'] ?? [];
-            if (is_array($marks)) {
-                foreach ($marks as $mark) {
-                    if (!is_array($mark) || ($mark['type'] ?? '') !== 'uncertain') {
-                        continue;
-                    }
-                    $token = trim((string) ($mark['token'] ?? ''));
-                    $tokens[] = $token !== '' ? $token : 'uncertain';
+            $parts = phase1_uncertain_parts($line);
+            if ($parts['has']) {
+                $shownTokens = $parts['tokens'];
+                if ($parts['tokenless']) {
+                    $shownTokens[] = 'uncertain';
                 }
-            }
-            if ($tokens !== []) {
                 $snippet = phase1_thought_preview($text, 120);
-                $label = $where . ' · ' . implode(', ', $tokens);
+                $label = $where . ' · ' . implode(', ', $shownTokens);
                 if ($snippet !== '') {
                     $label .= ' — ' . $snippet;
                 }
@@ -1150,6 +1281,9 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                     'title' => $label,
                     'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
                     'id' => $file === $activeFile ? $anchor : '',
+                    'file' => $file,
+                    'line' => $n,
+                    'handled' => phase1_uncertain_handled($file, $n, $parts['tokens'], $parts['tokenless'], $suggestions),
                 ];
             }
 
@@ -1193,11 +1327,16 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                     $label .= ' — ' . phase1_thought_preview($intent, 80);
                 }
                 $anchor = phase1_anchor('blocked', $file, $n);
+                $pasted = trim((string) ($link['userPaste'] ?? '')) !== ''
+                    || trim((string) ($link['userNote'] ?? '')) !== '';
                 $jumps['blocked'][] = [
                     'text' => $label,
                     'title' => $label,
                     'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
                     'id' => $file === $activeFile ? $anchor : '',
+                    'file' => $file,
+                    'line' => $n,
+                    'handled' => phase1_blocked_handled($file, $n, $pasted, $suggestions),
                 ];
             }
         }
@@ -1211,10 +1350,12 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
  *
  * @param array<string, mixed>|null $phase1
  * @param list<string> $noteFiles
+ * @param array<string, mixed> $suggestions
  * @return array<string, array{uncertain: int, blocked: int, attention: int, added: int}>
  */
-function phase1_file_nav_stats(?array $phase1, array $noteFiles): array
+function phase1_file_nav_stats(?array $phase1, array $noteFiles, array $suggestions = []): array
 {
+    $suggestions = normalize_phase1_suggestions($suggestions);
     $out = [];
     foreach ($noteFiles as $name) {
         $out[$name] = [
@@ -1245,14 +1386,10 @@ function phase1_file_nav_stats(?array $phase1, array $noteFiles): array
             if (!is_array($line)) {
                 continue;
             }
-            $marks = $line['marks'] ?? [];
-            if (is_array($marks)) {
-                foreach ($marks as $mark) {
-                    if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
-                        $uncertain++;
-                        break;
-                    }
-                }
+            $n = (int) ($line['n'] ?? 0);
+            $parts = phase1_uncertain_parts($line);
+            if ($parts['has'] && !phase1_uncertain_handled($fileName, $n, $parts['tokens'], $parts['tokenless'], $suggestions)) {
+                $uncertain++;
             }
             $yt = $line['youtube'] ?? null;
             if (is_array($yt) && !empty($yt['added'])) {
@@ -1261,7 +1398,11 @@ function phase1_file_nav_stats(?array $phase1, array $noteFiles): array
             $link = $line['link'] ?? null;
             if (is_array($link)) {
                 if (!empty($link['blocked'])) {
-                    $blocked++;
+                    $pasted = trim((string) ($link['userPaste'] ?? '')) !== ''
+                        || trim((string) ($link['userNote'] ?? '')) !== '';
+                    if (!phase1_blocked_handled($fileName, $n, $pasted, $suggestions)) {
+                        $blocked++;
+                    }
                 }
                 if (!empty($link['added'])) {
                     $added++;

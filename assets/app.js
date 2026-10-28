@@ -3565,6 +3565,120 @@
       phase1SuggestState = normalizePhase1SuggestState(null);
     }
 
+    var attentionCatalog = [];
+    var attentionPaste = {};
+    try {
+      var attentionEl = qs("#phase1-attention-data");
+      var parsedAttention = attentionEl ? JSON.parse(attentionEl.textContent || "[]") : [];
+      attentionCatalog = Array.isArray(parsedAttention) ? parsedAttention : [];
+    } catch (errAttention) {
+      attentionCatalog = [];
+    }
+
+    function attentionShorthandText(token) {
+      var fold = String(token || "").trim().toLowerCase();
+      if (!fold) return "";
+      var keys = Object.keys(phase1SuggestState.shorthands);
+      for (var i = 0; i < keys.length; i++) {
+        if (String(keys[i]).trim().toLowerCase() === fold) {
+          return String(phase1SuggestState.shorthands[keys[i]] || "").trim();
+        }
+      }
+      return "";
+    }
+
+    function attentionLineComment(file, line) {
+      return String(phase1SuggestState.lines[String(file) + ":" + String(line)] || "").trim();
+    }
+
+    function attentionItemHandled(item) {
+      var file = String(item.file || "");
+      var line = Number(item.line || 0);
+      if (attentionLineComment(file, line) !== "") return true;
+      if (item.kind === "blocked") {
+        var pasteKey = file + ":" + line;
+        if (Object.prototype.hasOwnProperty.call(attentionPaste, pasteKey)) {
+          return !!attentionPaste[pasteKey];
+        }
+        return !!item.pasted;
+      }
+      if (item.tokenless) return false;
+      var tokens = Array.isArray(item.tokens) ? item.tokens : [];
+      if (!tokens.length) return false;
+      for (var t = 0; t < tokens.length; t++) {
+        if (attentionShorthandText(tokens[t]) === "") return false;
+      }
+      return true;
+    }
+
+    function attentionBadgeLabel(uncertainN, blockedN) {
+      var parts = [];
+      if (uncertainN > 0) {
+        parts.push(uncertainN + " shorthand" + (uncertainN === 1 ? "" : "s"));
+      }
+      if (blockedN > 0) {
+        parts.push(blockedN + " blocked URL" + (blockedN === 1 ? "" : "s"));
+      }
+      return parts.length ? "Needs attention: " + parts.join(", ") : "No attention items";
+    }
+
+    function refreshAttentionCounts() {
+      var byFile = {};
+      var totals = { uncertain: 0, blocked: 0 };
+      attentionCatalog.forEach(function (item) {
+        if (!item || !item.file) return;
+        var file = String(item.file);
+        if (!byFile[file]) byFile[file] = { uncertain: 0, blocked: 0 };
+        if (attentionItemHandled(item)) return;
+        var kind = item.kind === "blocked" ? "blocked" : "uncertain";
+        byFile[file][kind] += 1;
+        totals[kind] += 1;
+      });
+      qsa("[data-file-nav]").forEach(function (row) {
+        var file = row.getAttribute("data-file-nav") || "";
+        var stats = byFile[file] || { uncertain: 0, blocked: 0 };
+        var total = stats.uncertain + stats.blocked;
+        row.classList.toggle("has-attention", total > 0);
+        var badge = qs("[data-file-attention]", row);
+        if (!badge) return;
+        badge.textContent = total > 0 ? String(total) : "";
+        badge.classList.toggle("is-on", total > 0);
+        var label = attentionBadgeLabel(stats.uncertain, stats.blocked);
+        badge.title = label;
+        badge.setAttribute("aria-label", label);
+      });
+      qsa("[data-review-count]").forEach(function (el) {
+        var key = el.getAttribute("data-review-count") || "";
+        if (key !== "uncertain" && key !== "blocked") return;
+        el.textContent = String(totals[key] || 0);
+      });
+      var totalEl = qs("[data-attention-total]");
+      if (totalEl) totalEl.textContent = "(" + (totals.uncertain + totals.blocked) + ")";
+      qsa("[data-attention-kind]").forEach(function (link) {
+        var file = link.getAttribute("data-attention-file") || "";
+        var line = parseInt(link.getAttribute("data-attention-line") || "0", 10);
+        var kind = link.getAttribute("data-attention-kind") || "";
+        var match = null;
+        for (var i = 0; i < attentionCatalog.length; i++) {
+          var entry = attentionCatalog[i];
+          if (!entry) continue;
+          if (String(entry.file) === file && Number(entry.line) === line && entry.kind === kind) {
+            match = entry;
+            break;
+          }
+        }
+        link.classList.toggle("is-handled", !!(match && attentionItemHandled(match)));
+      });
+      qsa("[data-attention-empty]").forEach(function (empty) {
+        var panel = empty.parentElement;
+        if (!panel) return;
+        var visible = qsa("[data-attention-kind]", panel).some(function (link) {
+          return !link.classList.contains("is-handled");
+        });
+        empty.hidden = visible;
+      });
+    }
+
     function findShorthandTokenKey(token) {
       var fold = String(token || "").trim().toLowerCase();
       if (!fold) return "";
@@ -3652,6 +3766,7 @@
         phase1SuggestState.shorthands[storedKey || key] = trimmed;
       }
       syncShorthandUi(key, String(text || ""));
+      refreshAttentionCounts();
       schedulePhase1SuggestSave();
       phase1History.noteSuggest("Suggest · " + (storedKey || key));
     }
@@ -3708,6 +3823,7 @@
       if (trimmed) phase1SuggestState.lines[id] = trimmed;
       else delete phase1SuggestState.lines[id];
       syncNoteSuggestMarks();
+      refreshAttentionCounts();
       schedulePhase1SuggestSave();
       phase1History.noteSuggest("Suggest · line " + String(id).split(":").pop());
     }
@@ -3853,6 +3969,8 @@
             String(userPaste || "").trim() !== "" ||
             String(userNote || "").trim() !== "";
           syncBlockUi(block, hasPaste);
+          attentionPaste[file + ":" + line] = hasPaste;
+          refreshAttentionCounts();
           if (savedEl) {
             savedEl.hidden = false;
             setTimeout(function () {
@@ -3977,6 +4095,7 @@
     initPhase1Minimap();
     initPhase1Regions();
     initPhase1History();
+    refreshAttentionCounts();
 
     function initPhase1History() {
       var bar = qs("[data-phase1-history]");
@@ -4109,6 +4228,7 @@
           else if (kind === "enrichment") syncEnrichmentUi(key, text);
         });
         syncNoteSuggestMarks();
+        refreshAttentionCounts();
         var byLine = {};
         qsa(".thought-row", doc).forEach(function (row) {
           byLine[row.getAttribute("data-source-line") || ""] = row;

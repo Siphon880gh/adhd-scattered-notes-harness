@@ -622,7 +622,7 @@ function render_count_bar(array $items, string $ariaLabel, string $openGroup = '
             }
             echo '<span>' . e($rowLabel) . '</span>';
             if ($tone === 'attention') {
-                echo '<span class="bucket-counts__group-count">(' . $groupTotal . ')</span>';
+                echo '<span class="bucket-counts__group-count" data-attention-total>(' . $groupTotal . ')</span>';
             }
             echo '<svg class="bucket-counts__chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
             echo '</button>';
@@ -654,16 +654,28 @@ function render_count_bar_items(array $items): void
         $count = (int) ($item['count'] ?? 0);
         $key = isset($item['key']) ? (string) $item['key'] : '';
         $jumps = $item['jumps'] ?? null;
+        $countKey = isset($item['countKey']) ? (string) $item['countKey'] : '';
+        $countAttr = $countKey !== '' ? ' data-review-count="' . e($countKey) . '"' : '';
         if (is_array($jumps)) {
             $align = !empty($item['alignEnd']) ? ' data-count-align="end"' : '';
+            $tracksAttention = $countKey === 'uncertain' || $countKey === 'blocked';
             echo '<div class="bucket-counts__menu" data-count-menu' . $align . '>';
             echo '<button type="button" class="bucket-counts__item bucket-counts__item--link" data-count-menu-toggle aria-expanded="false" aria-haspopup="true" title="Show ' . e($label) . '">';
-            echo e($label) . ' (<span>' . $count . '</span>)';
+            echo e($label) . ' (<span' . $countAttr . '>' . $count . '</span>)';
             echo '</button>';
             echo '<div class="bucket-counts__panel" role="group" aria-label="' . e($label) . '">';
             if ($jumps === []) {
                 echo '<p class="bucket-counts__empty">None</p>';
             } else {
+                $openJumps = 0;
+                foreach ($jumps as $jump) {
+                    if (is_array($jump) && empty($jump['handled'])) {
+                        $openJumps++;
+                    }
+                }
+                if ($tracksAttention) {
+                    echo '<p class="bucket-counts__empty" data-attention-empty' . ($openJumps > 0 ? ' hidden' : '') . '>None</p>';
+                }
                 foreach ($jumps as $jump) {
                     if (!is_array($jump)) {
                         continue;
@@ -673,7 +685,14 @@ function render_count_bar_items(array $items): void
                     $href = (string) ($jump['href'] ?? '#');
                     $jumpId = (string) ($jump['id'] ?? '');
                     $jumpAttr = $jumpId !== '' ? ' data-count-jump="' . e($jumpId) . '"' : '';
-                    echo '<a class="bucket-counts__jump" href="' . e($href) . '" title="' . e($title) . '"' . $jumpAttr . '>' . e($text) . '</a>';
+                    $jumpClass = 'bucket-counts__jump' . (!empty($jump['handled']) ? ' is-handled' : '');
+                    $attentionAttr = '';
+                    if ($tracksAttention) {
+                        $attentionAttr = ' data-attention-file="' . e((string) ($jump['file'] ?? '')) . '"';
+                        $attentionAttr .= ' data-attention-line="' . (int) ($jump['line'] ?? 0) . '"';
+                        $attentionAttr .= ' data-attention-kind="' . e($countKey) . '"';
+                    }
+                    echo '<a class="' . $jumpClass . '" href="' . e($href) . '" title="' . e($title) . '"' . $jumpAttr . $attentionAttr . '>' . e($text) . '</a>';
                 }
             }
             echo '</div></div>';
@@ -683,7 +702,7 @@ function render_count_bar_items(array $items): void
             echo '</button>';
         } else {
             echo '<span class="bucket-counts__item">';
-            echo e($label) . ' (<span>' . $count . '</span>)';
+            echo e($label) . ' (<span' . $countAttr . '>' . $count . '</span>)';
             echo '</span>';
         }
     }
@@ -1048,8 +1067,8 @@ $isSnapshotView = $viewingSnapshot !== null;
         </p>
     </main>
 <?php elseif ($phase === 1):
-    $phase1Counts = phase1_review_counts($phase1, $noteFiles);
-    $phase1Jumps = phase1_review_jumps($phase1, $noteFiles, $activeFile, $isPhasePreview ? (int) $phase : 0);
+    $phase1Counts = phase1_review_counts($phase1, $noteFiles, $phase1Suggestions);
+    $phase1Jumps = phase1_review_jumps($phase1, $noteFiles, $activeFile, $isPhasePreview ? (int) $phase : 0, $phase1Suggestions);
     $attentionTotal = (int) $phase1Counts['uncertain'] + (int) $phase1Counts['blocked'];
     render_count_bar([
         [
@@ -1066,11 +1085,19 @@ $isSnapshotView = $viewingSnapshot !== null;
             'label' => 'Need attention',
             'tone' => 'attention',
             'items' => [
-                ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain'], 'jumps' => $phase1Jumps['uncertain']],
-                ['label' => 'Blocked', 'count' => $phase1Counts['blocked'], 'jumps' => $phase1Jumps['blocked']],
+                ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain'], 'countKey' => 'uncertain', 'jumps' => $phase1Jumps['uncertain']],
+                ['label' => 'Blocked', 'count' => $phase1Counts['blocked'], 'countKey' => 'blocked', 'jumps' => $phase1Jumps['blocked']],
             ],
         ],
     ], 'Phase 1 review counts', $attentionTotal > 0 ? 'attention' : 'links');
+    $attentionCatalog = phase1_attention_catalog($phase1, $noteFiles);
+    echo '<script type="application/json" id="phase1-attention-data">'
+        . str_replace(
+            '</',
+            '<\/',
+            (string) json_encode($attentionCatalog, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+        )
+        . '</script>';
     ?>
     <aside class="banner banner--warn<?= $isPhasePreview ? ' banner--preview' : '' ?>">
         <h2><?= e(phase_label(1)) ?></h2>
@@ -1123,7 +1150,7 @@ $isSnapshotView = $viewingSnapshot !== null;
             <?php if ($noteFiles === []): ?>
                 <p class="muted">No <code>.md</code> / <code>.txt</code> notes in this folder yet.</p>
             <?php else:
-                $fileNavStats = phase1_file_nav_stats($phase1, $noteFiles);
+                $fileNavStats = phase1_file_nav_stats($phase1, $noteFiles, $phase1Suggestions);
                 ?>
                 <div class="file-nav__cols" role="row">
                     <span class="file-nav__col-file" role="columnheader">Name</span>
@@ -1139,7 +1166,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         >!</button>
                         <div class="file-nav__col-tip" id="file-nav-tip-attention" data-section-info-tip role="tooltip">
                             <strong>Needs attention</strong>
-                            Shorthands the AI flagged, and blocked URLs that need you to open the page and paste text here.
+                            Shorthands the AI flagged, and blocked URLs that still need a paste. Suggest on a shorthand, comment on that line, or save a paste, and it leaves this count.
                         </div>
                     </div>
                     <div class="file-nav__col-help file-nav__col-help--added" data-section-info role="columnheader">
@@ -1185,10 +1212,11 @@ $isSnapshotView = $viewingSnapshot !== null;
                             : 'No added enrichments';
                         ?>
                         <li>
-                            <a href="?file=<?= e(rawurlencode($name)) ?><?= $isPhasePreview ? '&amp;preview=' . (int) $phase : '' ?>" class="file-nav__row<?= $name === $activeFile ? ' is-active' : '' ?><?= $attention > 0 ? ' has-attention' : '' ?>">
+                            <a href="?file=<?= e(rawurlencode($name)) ?><?= $isPhasePreview ? '&amp;preview=' . (int) $phase : '' ?>" class="file-nav__row<?= $name === $activeFile ? ' is-active' : '' ?><?= $attention > 0 ? ' has-attention' : '' ?>" data-file-nav="<?= e($name) ?>">
                                 <span class="file-nav__name"><?= e($name) ?></span>
                                 <span
                                     class="file-nav__badge file-nav__badge--attention<?= $attention > 0 ? ' is-on' : '' ?>"
+                                    data-file-attention
                                     title="<?= e($attentionLabel) ?>"
                                     aria-label="<?= e($attentionLabel) ?>"
                                 ><?= $attention > 0 ? (int) $attention : '' ?></span>
