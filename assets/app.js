@@ -5128,6 +5128,16 @@
       viewport.style.top = start * trackH + "px";
     }
 
+    function updateProgress() {
+      var el = qs("[data-minimap-progress]", map);
+      if (!el) return;
+      var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      var pct = max <= 0 ? 100 : Math.round((window.scrollY / max) * 100);
+      if (pct < 0) pct = 0;
+      if (pct > 100) pct = 100;
+      el.textContent = pct + "%";
+    }
+
     function contentTop() {
       return doc.getBoundingClientRect().top + window.scrollY;
     }
@@ -5162,6 +5172,7 @@
       layoutBlocks();
       placeViewport();
       markCurrent();
+      updateProgress();
     }
 
     var mapToast = qs("[data-map-toast]");
@@ -5274,6 +5285,7 @@
     window.addEventListener("scroll", function () {
       placeViewport();
       markCurrent();
+      updateProgress();
     }, { passive: true });
     document.addEventListener("phase1-regions-changed", function () {
       syncMinimapNotes();

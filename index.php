@@ -1569,6 +1569,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         </button>
                     <?php endforeach; ?>
                     <div class="minimap__viewport" data-minimap-viewport hidden></div>
+                    <div class="minimap__progress" data-minimap-progress>0%</div>
                 </div>
             </aside>
         <?php endif; ?>

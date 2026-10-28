@@ -1651,6 +1651,25 @@ body.is-resizing-thought {
   background: rgba(110, 181, 255, 0.28);
 }
 
+.minimap__progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 0.08rem 0.28rem 0.12rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: var(--ink);
+  background: rgba(18, 20, 24, 0.9);
+  border-top-left-radius: 3px;
+  pointer-events: none;
+}
+
 @media (max-width: 720px) {
   .layout:has(.minimap) {
     grid-template-columns: 1fr;
