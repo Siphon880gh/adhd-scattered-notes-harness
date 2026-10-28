@@ -11,6 +11,116 @@ function e(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+/**
+ * Note text with http(s) URLs and markdown links as anchors that open in a new window.
+ * The rest of the text stays escaped.
+ */
+function linkify_note(string $text): string
+{
+    $pattern = '/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(?<![\w\/])(https?:\/\/[^\s<]+)/u';
+    if (!preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE)) {
+        return e($text);
+    }
+
+    $out = '';
+    $offset = 0;
+    $length = strlen($text);
+    foreach ($matches[0] as $i => $full) {
+        $start = $full[1];
+        $raw = $full[0];
+        $rawTail = '';
+        if ($start < $offset) {
+            continue;
+        }
+        $end = $start + strlen($raw);
+        $isMarkdown = ($matches[2][$i][0] ?? '') !== '';
+        if ($isMarkdown) {
+            $url = (string) $matches[2][$i][0];
+            $label = linkify_note_label((string) $matches[1][$i][0]);
+            $mark = '';
+            if ($start >= 2 && substr($text, $start - 2, 2) === '**' && substr($text, $end, 2) === '**') {
+                $mark = '**';
+            } elseif ($start >= 2 && substr($text, $start - 2, 2) === '__' && substr($text, $end, 2) === '__') {
+                $mark = '__';
+            }
+            if ($mark !== '') {
+                $start -= 2;
+                $end += 2;
+            }
+        } else {
+            $url = (string) $matches[3][$i][0];
+            [$url, $tail] = linkify_note_trim_url($url);
+            $end = $start + strlen($url);
+            $rawTail = substr($text, $end, strlen($tail));
+            $label = $url;
+        }
+        if ($start > $length) {
+            break;
+        }
+        $safe = linkify_note_url($url);
+        $out .= e(substr($text, $offset, $start - $offset));
+        if ($safe === '') {
+            $out .= e(substr($text, $start, $end - $start));
+        } else {
+            $out .= '<a class="note-link" href="' . e($safe) . '" target="_blank" rel="noopener noreferrer">' . e($label !== '' ? $label : $safe) . '</a>';
+        }
+        if (!$isMarkdown && isset($rawTail) && $rawTail !== '') {
+            $out .= e($rawTail);
+            $end += strlen($rawTail);
+        }
+        $offset = $end;
+    }
+    $out .= e(substr($text, $offset));
+
+    return $out;
+}
+
+function linkify_note_label(string $label): string
+{
+    $label = trim($label);
+    $previous = null;
+    while ($previous !== $label) {
+        $previous = $label;
+        $stripped = preg_replace('/^(\*\*|__|\*|_)(.+)\1$/u', '$2', $label);
+        $label = trim(is_string($stripped) ? $stripped : $label);
+    }
+
+    return $label;
+}
+
+/**
+ * @return array{0: string, 1: string}
+ */
+function linkify_note_trim_url(string $url): array
+{
+    $tail = '';
+    while ($url !== '' && preg_match('/[.,;:!?\'"\]}>]$/u', $url) === 1) {
+        $tail = substr($url, -1) . $tail;
+        $url = substr($url, 0, -1);
+    }
+    while ($url !== '' && substr($url, -1) === ')' && substr_count($url, ')') > substr_count($url, '(')) {
+        $tail = ')' . $tail;
+        $url = substr($url, 0, -1);
+    }
+
+    return [$url, $tail];
+}
+
+function linkify_note_url(string $url): string
+{
+    $url = trim($url);
+    $parts = parse_url($url);
+    if (!is_array($parts)) {
+        return '';
+    }
+    $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+    if (($scheme !== 'http' && $scheme !== 'https') || ($parts['host'] ?? '') === '') {
+        return '';
+    }
+
+    return $url;
+}
+
 /** Cache-bust local asset URLs with ?t=filemtime. */
 function asset_url(string $relativePath): string
 {
@@ -60,7 +170,9 @@ function list_input_projects(): array
 
 /**
  * Phase to use the first time a project is opened and nothing has remembered it.
- * Phase 2 once phase2.json exists. Phase 3 once that file has a filter layout.
+ * Phase 2 once phase2.json exists. Tags and filterLayout are written in Phase 2,
+ * so they do not mean review is locked. Phase 3 is only the phase stored in
+ * app.config.json after the user advances.
  */
 function infer_project_phase(string $folder): int
 {
@@ -71,10 +183,6 @@ function infer_project_phase(string $folder): int
     $phase2 = load_json_file($dir . '/phase2.json');
     if (!is_array($phase2)) {
         return 1;
-    }
-    $layout = $phase2['filterLayout'] ?? null;
-    if (is_array($layout) && $layout !== []) {
-        return 3;
     }
 
     return 2;
@@ -636,13 +744,61 @@ function normalize_organized_item(array $item, string $bucket): array
 }
 
 /**
- * Dash-only fence length, or 0 when the line is not a note break.
- * Three or more dashes (`---`, `------`) match the harness divider rules.
+ * True when the trimmed line is only a divider candidate: short or long
+ * dashes (`--`, `---`, `------`), an HTML rule (`<hr>`), or multiple asterisks.
  */
+function phase1_is_separator(string $text): bool
+{
+    $trim = trim($text);
+    if ($trim === '') {
+        return false;
+    }
+    if (preg_match('/^-{2,}$/', $trim) === 1) {
+        return true;
+    }
+    if (preg_match('/^\*{2,}$/', $trim) === 1) {
+        return true;
+    }
+
+    return preg_match('/^<hr\b[^>]*>$/i', $trim) === 1;
+}
+
+/**
+ * Indexes of blank lines that sit in a run of two or more.
+ * One blank line is paragraph space. Two or more are a divider candidate.
+ *
+ * @param list<array<string, mixed>> $lines
+ * @return array<int, true>
+ */
+function phase1_blank_run_indexes(array $lines): array
+{
+    $indexes = [];
+    $run = [];
+    $flush = function () use (&$run, &$indexes): void {
+        if (count($run) >= 2) {
+            foreach ($run as $i) {
+                $indexes[$i] = true;
+            }
+        }
+        $run = [];
+    };
+    foreach ($lines as $i => $line) {
+        $blank = is_array($line) && trim((string) ($line['text'] ?? '')) === '';
+        if ($blank) {
+            $run[] = $i;
+            continue;
+        }
+        $flush();
+    }
+    $flush();
+
+    return $indexes;
+}
+
 function phase1_dash_length(string $text): int
 {
     $trim = trim($text);
-    if ($trim === '' || preg_match('/^-{3,}$/', $trim) !== 1) {
+    if ($trim === '' || preg_match('/^-{2,}$/', $trim) !== 1) {
         return 0;
     }
 
@@ -689,56 +845,16 @@ function phase1_thought_preview(string $text, int $max = 84): string
 }
 
 /**
- * Indexes of short dash lines kept as content because a longer fence wraps them
- * (`---` inside a `------` article wrapper).
- *
- * @param list<array<string, mixed>> $lines
- * @return array<int, true>
- */
-function phase1_protected_dash_indexes(array $lines): array
-{
-    $byLength = [];
-    foreach ($lines as $i => $line) {
-        if (!is_array($line)) {
-            continue;
-        }
-        $len = phase1_dash_length((string) ($line['text'] ?? ''));
-        if ($len >= 6) {
-            $byLength[$len][] = $i;
-        }
-    }
-
-    $protected = [];
-    foreach ($byLength as $len => $positions) {
-        $pairs = intdiv(count($positions), 2);
-        for ($pair = 0; $pair < $pairs; $pair++) {
-            $start = $positions[$pair * 2];
-            $end = $positions[$pair * 2 + 1];
-            for ($j = $start + 1; $j < $end; $j++) {
-                $inner = $lines[$j] ?? null;
-                if (!is_array($inner)) {
-                    continue;
-                }
-                $innerLen = phase1_dash_length((string) ($inner['text'] ?? ''));
-                if ($innerLen >= 3 && $innerLen < $len) {
-                    $protected[$j] = true;
-                }
-            }
-        }
-    }
-
-    return $protected;
-}
-
-/**
  * Group source lines into distinct notes.
- * A line of only `---` (or longer) is a hard break. A longer matching fence
- * keeps shorter dash lines inside that note. Files with no dash break split
- * on blank lines instead.
+ * A divider line (`--`, `---`, `------`, `<hr>`, or a line of asterisks) is a
+ * candidate break, and so is a run of two or more blank lines. One blank line
+ * is paragraph space. Dash length does not decide; the skill joins a divider
+ * that is only a section of the same idea or article. Files with no divider
+ * split on every blank line instead.
  *
  * User overrides: `splits` are source line numbers that start a new note even
  * when the file has no break there. `joins` are source line numbers that stay
- * with the previous note even when a dash or blank line would split them.
+ * with the previous note even when a divider or blank line would split them.
  *
  * @param list<array<string, mixed>> $lines
  * @param array{splits?: list<int>, joins?: list<int>} $overrides
@@ -747,16 +863,17 @@ function phase1_protected_dash_indexes(array $lines): array
 function phase1_thoughts(array $lines, array $overrides = []): array
 {
     $lines = array_values($lines);
-    $protected = phase1_protected_dash_indexes($lines);
-    $hasHardBreak = false;
-    foreach ($lines as $i => $line) {
-        if (!is_array($line)) {
-            continue;
-        }
-        $len = phase1_dash_length((string) ($line['text'] ?? ''));
-        if ($len >= 3 && !isset($protected[$i])) {
-            $hasHardBreak = true;
-            break;
+    $blankRuns = phase1_blank_run_indexes($lines);
+    $hasHardBreak = $blankRuns !== [];
+    if (!$hasHardBreak) {
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            if (phase1_is_separator((string) ($line['text'] ?? ''))) {
+                $hasHardBreak = true;
+                break;
+            }
         }
     }
 
@@ -849,10 +966,9 @@ function phase1_thoughts(array $lines, array $overrides = []): array
             continue;
         }
         $text = (string) ($line['text'] ?? '');
-        $len = phase1_dash_length($text);
         $n = (int) ($line['n'] ?? ($i + 1));
         $isSeparator = $hasHardBreak
-            ? ($len >= 3 && !isset($protected[$i]))
+            ? (phase1_is_separator($text) || isset($blankRuns[$i]))
             : (trim($text) === '');
         if ($isSeparator) {
             if ($current !== []) {
@@ -888,7 +1004,7 @@ function phase1_thoughts(array $lines, array $overrides = []): array
         $previousHue = $hue;
     }
 
-    $mode = $hasHardBreak ? 'dashes' : 'blanks';
+    $mode = $hasHardBreak ? 'dividers' : 'blanks';
 
     return ['mode' => $mode, 'thoughts' => $thoughts];
 }
@@ -963,13 +1079,14 @@ function phase1_anchor(string $kind, string $file, int $line): string
     return 'p1-' . $kind . '-' . $slug . '-' . $line;
 }
 
-function phase1_jump_href(string $file, string $activeFile, string $anchor): string
+function phase1_jump_href(string $file, string $activeFile, string $anchor, int $previewPhase = 0): string
 {
+    $preview = ($previewPhase >= 1 && $previewPhase <= 3) ? 'preview=' . $previewPhase : '';
     if ($file === $activeFile) {
-        return '#' . $anchor;
+        return ($preview !== '' ? '?' . $preview : '') . '#' . $anchor;
     }
 
-    return '?file=' . rawurlencode($file) . '#' . $anchor;
+    return '?file=' . rawurlencode($file) . ($preview !== '' ? '&' . $preview : '') . '#' . $anchor;
 }
 
 /**
@@ -979,7 +1096,7 @@ function phase1_jump_href(string $file, string $activeFile, string $anchor): str
  * @param list<string> $noteFiles
  * @return array<string, list<array{text: string, title: string, href: string, id: string}>>
  */
-function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFile): array
+function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFile, int $previewPhase = 0): array
 {
     $many = count($noteFiles) > 1;
     $jumps = [
@@ -994,7 +1111,7 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
         $jumps['files'][] = [
             'text' => $file,
             'title' => $file,
-            'href' => phase1_jump_href($file, $activeFile, 'p1-file'),
+            'href' => phase1_jump_href($file, $activeFile, 'p1-file', $previewPhase),
             'id' => $file === $activeFile ? 'p1-file' : '',
         ];
 
@@ -1031,7 +1148,7 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                 $jumps['uncertain'][] = [
                     'text' => $label,
                     'title' => $label,
-                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
                     'id' => $file === $activeFile ? $anchor : '',
                 ];
             }
@@ -1047,7 +1164,7 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                 $jumps['youtube'][] = [
                     'text' => $label,
                     'title' => $label,
-                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
                     'id' => $file === $activeFile ? $anchor : '',
                 ];
             }
@@ -1065,7 +1182,7 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                 $jumps['links'][] = [
                     'text' => $label,
                     'title' => $label . ($url !== '' && $url !== $shown ? ' — ' . $url : ''),
-                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
                     'id' => $file === $activeFile ? $anchor : '',
                 ];
             }
@@ -1079,7 +1196,7 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                 $jumps['blocked'][] = [
                     'text' => $label,
                     'title' => $label,
-                    'href' => phase1_jump_href($file, $activeFile, $anchor),
+                    'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
                     'id' => $file === $activeFile ? $anchor : '',
                 ];
             }

@@ -11,7 +11,7 @@ For ADHD minds that jot notes everywhere in real time-and wishes to turn the mes
 
 A Cursor / Claude Code harness for turning a folder of ad-hoc notes into grouped tasks and reference knowledge—without losing detail.
 
-The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 adjustments in the browser (move / tag / reorder / Suggest / green-check — saved into `phase2.json` or `phase2-suggestions.md`), then return to the chat for merges, fidelity fixes, or Phase 3 auto-tagging. Phase 3 locks review controls and is mainly **filter + Copy** into your permanent notes app.
+The PHP app is an **artifact container**. The skill does the heavy organizing in Cursor or Claude Code and writes artifacts next to your notes. You open `index.php` to review them, make light Phase 2 adjustments in the browser (move / tag / reorder / Suggest / green-check — saved into `phase2.json` or `phase2-suggestions.md`), then return to the chat for merges, fidelity fixes, or to lock Phase 3. Phase 2 already puts area tags on each card and in the Filter bar. Phase 3 locks review controls and is mainly **filter + Copy** into your permanent notes app.
 
 The newer version is packed with more ways to organize your scattered ideas: colored note regions, a map of the whole file, Split and Merge when a boundary is wrong, and a Projects menu so folders such as `inputs/sort-scattered` and `inputs/sample` stay separate.
 
@@ -21,7 +21,7 @@ If you have ADHD, notes rarely land in one place. You jot something in a `.txt` 
 
 This harness is for that chaotic, on-the-fly jotting of a fast ADHD brain: dump first, then let AI sort it into something usable—**actionable** tasks or **referable** knowledge.
 
-It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Empty lines or dashes (`---`) as dividers are fine—the app draws those as separate colored notes, and the skill groups from the same boundaries. You can even paste an entire article into a note full of other random thoughts, as long as you made a reasonable effort to mark it as a different idea (separated by empty lines or dashes). If the article already has dash lines, add twice the dash lines to separate the article from your other thoughts (e.g. article uses `---` → wrap it with `------`). If a region is still wrong, redraw it in Phase 1 (Split, or Merge up / Merge down). That correction is saved and the skill follows it.
+It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Dividers are fine: dashes (`--`, `---`, `------`), `<hr>`, a line of asterisks, or two blank lines in a row. One blank line is paragraph space. The app draws each divider as a candidate note, and the skill decides whether it starts a new idea or is only a section of the same article. You can paste an entire article next to other thoughts and mark it off with a divider; internal rules in that article stay part of it when they are sections, not new ideas. If a region is still wrong, redraw it in Phase 1 (Split, or Merge up / Merge down). That correction is saved and the skill follows it.
 
 Shorthands and symbols are welcome too. When something is unclear, AI asks you to clarify, then builds a dictionary of your shorthands (`shorthands.md`) so it can read your notes the way you write them.
 
@@ -40,7 +40,7 @@ Each folder under `inputs/` is a separate project. Use **Projects** in the app h
 ## Setup
 
 1. Create a batch folder: `inputs/whatname/`
-2. Drop scattered notes as `.md` and/or `.txt`. One thought per file, many thoughts in one file, or one thought split across files—all fine. Use `---` between thoughts in the same file when you want a hard break; blank lines and adjacent lines can still be separate thoughts.
+2. Drop scattered notes as `.md` and/or `.txt`. One thought per file, many thoughts in one file, or one thought split across files—all fine. A divider (`---`, `<hr>`, `***`, or two blank lines) marks a possible new idea; the skill decides whether it is a new idea or a section of the same article. A single blank line is the candidate only when the file has no divider.
 3. In Cursor or Claude Code, run the skill at `.agents/skills/scattered-notes` and pick that folder (the skill will set `app.config.json`) — **or** prompt to use the scattered note organizing skill.
 4. Serve the app and open it to review artifacts:
 
@@ -83,13 +83,13 @@ inputs/
 
 ## Three phases
 
-### Phase 1 — clarify before organize
+### Phase 1 — review marks, links, and boundaries
 
 The skill reads the app-wide `shorthands.md` (project root) first, then marks unclear symbols and shorthand. YouTube links get a green “added” descriptor (title / what the video is about) inferred from the video’s title, description, and comments—no watching required.
 
 Review marks in `index.php`. Explain shorthand in the agent chat; the skill updates root `shorthands.md` and refreshes `phase1.json`. Reload the app to see updates.
 
-The same screen numbers each distinct note and shows the whole file on a map at the right. A line that is only `---` starts a new note (a longer `------` fence keeps shorter dashes inside that note). A file with no dash break is split on blank lines. Neighboring notes never share a color.
+The same screen numbers each distinct note and shows the whole file on a map at the right. A divider (`---`, `<hr>`, `***`, or two blank lines) starts a candidate note; the skill decides whether that is a new idea or a section of the same article. A file with no divider is split on single blank lines. Neighboring notes never share a color.
 
 If the AI’s boundary is wrong:
 
@@ -98,7 +98,7 @@ If the AI’s boundary is wrong:
 
 Colors are reassigned automatically. The edit is saved to `phase1-regions.md`. The skill reads that file before it groups notes and does not throw the correction away. Putting the boundary back removes the saved edit.
 
-### Phase 2 — organize with fidelity
+### Phase 2 — sort notes and review tags
 
 When Phase 1 is done, the skill groups notes into **Scattered**, **Reference**, and **Articles** (stored in `phase2.json` as `tasks`, `reference`, and `articleCandidates`). Every source line is accounted for in a blame map so details do not disappear silently.
 
@@ -107,16 +107,18 @@ Visit the web app and check that things are properly organized. In the app you c
 - **Move** items between Scattered / Reference / Articles (Move dropdown on each card)
 - **Green-check** items as you review them (circle next to the title; saved into `phase2.json`)
 - **Suggest** on any card (and on each section header: Scattered / Reference / Articles) — tell the AI how to change a note or a whole section (rewrite, merge, move, tagging, heading style, ordering); saved to `phase2-suggestions.md` for the next pass
-- **Tag** any item on the right; new tags appear in the **Filter** bar at the top (optional — Phase 3 will tag by area for you)
+- **Tags** are already on each card and in the **Filter** bar. Add, remove, or rename one on the right if it is wrong.
 - **Collapse / expand** each panel from its header
 - **Rearrange** items inside a panel: click the ↔ icon, drag cards, then release (or click ↔ again) to finish — order is saved
 - Open original notes with per-line accounting via the hamburger (**B** toggles that sidebar open/closed)
 
 Panel moves/tags POST to `index.php?action=save-phase2` (`phase2.json`). Suggest notes POST to `index.php?action=save-suggestions` (`phase2-suggestions.md`). Return to chat for merges, fidelity fixes, or to start Phase 3 — the skill reads your suggestions when revising Phase 2.
 
-### Phase 3 — auto-tag by area (locked)
+### Phase 3 — filter and copy into your notes
 
-When Phase 2 looks good, the skill applies any pending `phase2-suggestions.md` notes, re-reads `phase2.json` (including browser edits), and tags items that belong in the same area. It also writes a `filterLayout` that groups related tags and inserts dividers between major areas. Tags can chunk up/down an idea (supercategory / category / subcategory); an item may have more than one tag. Spaces in tags are fine; prefer short phrases over long ones. User-added tags are preserved and merged.
+Phase 2 already tags every card by area and writes a `filterLayout` that groups related tags with dividers between major areas. Tags can chunk up/down an idea (supercategory / category / subcategory); an item may have more than one tag. Spaces in tags are fine; prefer short phrases over long ones.
+
+When Phase 2 looks good, the skill applies any pending `phase2-suggestions.md` notes, re-reads `phase2.json` (including browser edits), keeps the tags you already set, and only fills an item that is still untagged. User-added tags are preserved and merged.
 
 Refresh the app: **Suggest** and green-check are off. Filter by tag and **Copy** cards (or whole panels) into your permanent notes app. Tag/move tweaks still save; return to chat only if you need tag refinements.
 
@@ -135,7 +137,7 @@ Same harness, stepped explicitly in chat:
 1. `/scattered-notes Start` — list folders under `inputs/`, pick one (or reset sample / use your own notes)
 2. `/scattered-notes Lets start Phase 1` — mark uncertain shorthand/symbols and enrich YouTube links; review in `index.php`, then return to chat to explain marks or confirm
 3. `/scattered-notes Lets go to Phase 2` — organize into Scattered / Reference / Articles with per-line blame; review and lightly edit in `index.php`, then return to chat to refine or advance
-4. `/scattered-notes Lets go to Phase 3` — apply pending suggestions if any, auto-tag by area; in `index.php` filter + Copy into your notes app (Suggest / check locked)
+4. `/scattered-notes Lets go to Phase 3` — apply pending suggestions if any, keep the Phase 2 tags, fill any that are still missing; in `index.php` filter + Copy into your notes app (Suggest / check locked)
 
 Between steps, serve and open the app as usual (`php -S localhost:8765` → `http://localhost:8765`).
 
@@ -147,7 +149,7 @@ Anyone who captures thoughts in bursts and organizes later—or never quite gets
 
 ### Phase 1 — distinct ideas, and a map of the whole file
 
-Open a batch in the app and each note is its own colored region, numbered with the source line range. Here `inputs/sort-scattered` is 54 notes, split on a line of dashes (`---`). The counts along the top — Files, Uncertain, YouTube, Links, Blocked — open a list; click a row and the page jumps to that line. The strip on the right is the whole file, one band per note, so a long dump stays visible at once. **Suggest** sits on a shorthand flag and on a green YouTube or link line.
+Open a batch in the app and each note is its own colored region, numbered with the source line range. Here `inputs/sort-scattered` is 54 notes, drawn from divider lines such as `---`. The skill then decides which of those are a new idea and which are a section of the same article. The counts along the top — Files, Uncertain, YouTube, Links, Blocked — open a list; click a row and the page jumps to that line. The strip on the right is the whole file, one band per note, so a long dump stays visible at once. **Suggest** sits on a shorthand flag and on a green YouTube or link line.
 
 If the boundary is wrong, **Split** a region that is really two ideas, or **Merge up** / **Merge down** when two regions are the same idea. Colors are reassigned so two notes in a row never share one. **Projects** in the header switches to another folder and restores that project’s phase. Snapshots, saved from Phase 3, stay available from either project.
 
@@ -191,7 +193,7 @@ Back in the agent chat, ask to proceed to Phase 2. The skill writes `phase2.json
 
 ### 7. Phase 2 — organized panels you can edit
 
-Reload the app. The main view shows **Scattered**, **Reference**, and **Articles** with source line links. On each card, use the right-side tray to add tags and Move between panels. Use the top Filter chips once tags exist; collapse panels from the header; use ↔ to rearrange within a panel.
+Reload the app. The main view shows **Scattered**, **Reference**, and **Articles** with source line links. Each card already has area tags, and the same tags are the Filter chips at the top. Use the right-side tray to add, remove, or rename a tag, and Move between panels. Collapse panels from the header; use ↔ to rearrange within a panel.
 
 ![Phase 2: organized tasks](assets/screenshots/f.png)
 

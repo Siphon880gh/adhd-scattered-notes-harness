@@ -14,13 +14,11 @@ It does not matter if:
 - Each line is a different idea
 - A whole document is broken up with empty lines
 
-Empty lines or dashes (`---`) as dividers are fine—the app draws those as separate notes, and the skill groups from the same boundaries. If a region is wrong, Split or Merge it in Phase 1; that correction is saved in `phase1-regions.md` and the skill follows it.
+Empty lines or dividers are fine: dashes (`--`, `---`, `------`), `<hr>`, a line of asterisks (`***`), or two blank lines in a row. One blank line is paragraph space. The app draws each divider as a candidate note. The skill decides whether it starts a new idea or is only a section of the same article, and saves that in `phase1-regions.md`. If a region is wrong, Split or Merge it in Phase 1; the skill follows that correction.
 
 ## Pasting articles next to other thoughts
 
-You can paste an entire article into a note full of other random thoughts, as long as you made a reasonable effort to mark it as a different idea (separated by empty lines or dashes).
-
-If the article already has dash lines, add twice the dash lines to separate the article from your other thoughts (e.g. article uses `---` → wrap it with `------`).
+You can paste an entire article into a note full of other random thoughts. Mark the article off with a divider. If the article already contains dashes, `<hr>`, or asterisks, leave them; the skill keeps those as sections of that article when they are not a new idea.
 
 ## Shorthands and symbols
 

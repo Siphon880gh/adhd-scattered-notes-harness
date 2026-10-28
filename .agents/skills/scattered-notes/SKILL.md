@@ -2,8 +2,9 @@
 name: scattered-notes
 description: >-
   Process a folder of scattered ADHD notes under inputs/ into Phase 1 clarity
-  marks, Phase 2 organized tasks/reference with per-line fidelity, and Phase 3
-  area tags. Use when the user wants to organize braindump .md/.txt notes
+  marks, Phase 2 organized tasks/reference with per-line fidelity and area tags
+  (shown on cards and in the filter bar), and a Phase 3 lock for filter and
+  copy. Use when the user wants to organize braindump .md/.txt notes
   (including .url.txt link captures), run the scattered-notes harness, update
   shorthands, enrich YouTube/web links (or collect browser pastes for blocked
   URLs), redraw Phase 1 note regions (split / merge; read phase1-regions.md),
@@ -26,7 +27,7 @@ This is primarily used under Cursor or Claude Code but we open the php file as a
 - User explains shorthand / symbols after reviewing Phase 1 in the app
 - User redraws Phase 1 note regions in the app (split one note, or merge two) and later asks about those boundaries
 - User confirms Phase 1 is done and wants Phase 2
-- User confirms Phase 2 is done and wants Phase 3 (auto-tagging)
+- User confirms Phase 2 is done and wants Phase 3 (lock review; refresh tags if any are still missing)
 - User says **“Revert to Phase 2”** while in Phase 3 (unlock Suggest / green-check again)
 
 ## File contracts
@@ -39,7 +40,7 @@ Per batch folder `inputs/{folder}/`:
 | `phase1.json` | Uncertain marks + YouTube + link enrichments (incl. blocked URLs awaiting user paste) |
 | `phase1-suggestions.md` | User feedback for Phase 1 — shared shorthand notes + per-enrichment notes; **read before rewriting Phase 1 / advancing** |
 | `phase1-regions.md` | User corrections to note boundaries (split / merge). **Read before Phase 2 grouping.** Do not treat it as a note. |
-| `phase2.json` | Organized notes + per-line blame map + item tags (+ optional `filterLayout`) |
+| `phase2.json` | Organized notes + per-line blame map + item tags + `filterLayout` |
 | `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole-section panels (Scattered / Reference / Articles); **read before writing/revising Phase 2** |
 
 Project root:
@@ -57,7 +58,7 @@ When you write `app.config.json`:
 
 Skip when reading notes: `phase1.json`, `phase1-suggestions.md`, `phase1-regions.md`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, and any non-`.md`/`.txt` files.
 
-A scattered note may be a line, a group of lines, or a whole file. Within a file, `---` separates notes, unless `phase1-regions.md` overrides that boundary. The batch is one broad category (coding, linux, etc.).
+A scattered note may be a line, a group of lines, or a whole file. A divider line is only a candidate boundary. You decide whether it starts a new idea or is a section of the same idea or article. `phase1-regions.md` records that decision. The batch is one broad category (coding, linux, etc.).
 
 ### `phase1.json`
 
@@ -127,7 +128,7 @@ A scattered note may be a line, a group of lines, or a whole file. Within a file
 - **Forbidden** YouTube titles/abouts: placeholders such as “YouTube link”, “metadata placeholder”, “unknown video”, empty `about` when the URL is reachable, or any invented stub. If fetch fails after trying: treat like any other blocked URL — use `link` with `blocked: true` (see below), **or** for YouTube-only fallback: `title` = `YouTube (lookup failed)` and put the failure reason in `about`. Prefer the shared `link` blocked panel so the user can paste from their browser.
 - **Non-YouTube links** (any `http://` / `https://` URL in any note, plus the whole contents of `*.url.txt` files): visit the page and enrich with a `link` object on the line that holds the URL (for multi-line `.url.txt` notes, put `link` on the URL line; use surrounding lines as `intent`).
   - `url` — canonical URL string
-  - `intent` — what to look up, taken from surrounding text in the same note (lines before/after the URL within the `---` / blank-line note boundary, or other lines in a `.url.txt` file). Empty string if the note is URL-only.
+  - `intent` — what to look up, taken from surrounding text in the same note (lines before/after the URL within the note you judged, or other lines in a `.url.txt` file). Empty string if the note is URL-only.
   - When the page **opens**: set `title` / `about` from the real page. If `intent` is set, focus `about` on that request (e.g. extract the complexity comparison they asked for); otherwise summarize the page in 1–3 sentences. Set `added: true`, `blocked: false`, leave `userPaste` / `userNote` empty (or preserve any prior user paste).
   - When the page **fails to open** (timeout, connection refused, HTTP error, bot wall, empty body — **any** fetch failure): set `blocked: true`, `added: false`, empty `title`/`about` (unless already filled from a prior user paste). Do **not** invent page content. The app shows a **blocked-URL panel** so the user can open the URL in their browser, describe what they need, and paste relevant text. Re-read `phase1.json` after they paste — the app writes `userPaste` / `userNote` via `index.php?action=save-url-paste`.
   - After the user pastes: derive `title` / `about` from `userPaste` (+ `userNote` / `intent`), set `added: true`, keep `blocked: true` only if you still lack enough text (otherwise `blocked: false`). Never wipe `userPaste` / `userNote`.
@@ -173,21 +174,36 @@ User corrections when an automatic note boundary is wrong. May be missing — tr
 40
 ```
 
-- `### Splits` — source line numbers that **start a new note** even though no `---` / blank line does.
-- `### Joins` — source line numbers that **stay with the previous note** even though a `---` or blank line would split them.
-- Everywhere else, keep the normal boundary rules below.
+- `### Splits` — source line numbers that **start a new note** even though no divider or blank line does.
+- `### Joins` — source line numbers that **stay with the previous note** even though a divider or blank line would split them. This is how you record a divider that is only a section of the same idea or article.
+- Everywhere else, the app's candidate breaks apply, and you still judge every divider as below.
 - Line numbers are 1-based and match the note file.
 - The stored file is only the difference from automatic boundaries. Restoring a boundary in the app removes that line; if a file has no remaining splits or joins, the app deletes `phase1-regions.md`.
 
-#### How the app draws a note
+#### How a divider becomes a note
 
-Use these same rules when you talk about regions or when you group notes. Do not invent a second segmentation.
+Use these same rules when you talk about regions or when you group notes. Do not invent a second segmentation. Dash length does not decide.
 
-- A line of only dashes, length 3 or more (`---`, `------`), is a hard break.
-- A longer matching fence (length 6 or more, used in pairs) keeps shorter dash lines strictly inside that pair as content. Example: an article that already uses `---` is wrapped in `------`.
-- If the file has no unprotected dash break, blank lines are the breaks instead.
-- Leading and trailing blank lines inside a group are not part of the note. Internal blank lines stay.
-- Empty groups between separators are not notes.
+A divider is any of these:
+
+- A line whose trimmed text is only dashes, short or long: `--`, `---`, `------`
+- An HTML rule: `<hr>`, `<hr/>`, `<hr />`, including a tag with attributes
+- A line of only asterisks: `**`, `***`, `****`
+- Two or more blank lines in a row. One blank line is paragraph space, not a divider.
+
+The app first draws a candidate note at every divider. If the file has none of these, single blank lines are the candidate breaks instead. That drawing is provisional. You decide what each candidate means:
+
+- **New idea** — the text after the divider is a different idea, piece of knowledge, or task. Leave the break. Do not join it.
+- **Section of the same idea or article** — the divider is a heading or rule inside one pasted article or one continuing thought. Join the first content line after the divider so it stays with the previous note. The divider stays inside that note.
+
+A short dash line can be a new idea. A long dash line can be only a section. Two blank lines can be either. Do not wrap an article in a longer dash fence to protect shorter dashes. Do not treat `<hr>` or a line of asterisks as ordinary text. Do not treat a single blank line as a divider when the file already has one.
+
+When a file has no divider at all, single blank lines are the candidates. Judge them the same way: paragraphs of one article stay one note; unrelated jots separated by a blank line are separate notes.
+
+Leading and trailing blank lines inside a group are not part of the note. Internal blank lines stay. Empty groups between separators are not notes.
+
+After you judge, write the joins and splits into `phase1-regions.md` so the app matches you. Honor splits and joins the user already saved; do not undo those to re-litigate a boundary they fixed. Then judge any divider they have not already joined or split.
+
 - Each note is one colored region in Phase 1. The map on the right is the whole file.
 - Hues, in order: 199, 152, 42, 270, 330, 12, 88, 230. If the next hue would match the previous note, skip to the one after it. The user does not pick colors. After every split or merge the app reassigns hues so two notes in a row never share a color.
 
@@ -307,7 +323,7 @@ Announce the detected state briefly (e.g. “Active: `inputs/sample` · phase 2 
 1. **Reset sample and select it** — wipe/recreate `inputs/sample/`, set it as the active project, continue Phase 1.
 2. **See the app with no folder selected** — recreate the sample notes on disk, but leave `inputFolder` empty so the app shows its empty state. This is only a preview of that screen. You still have to pick a folder afterward (or say you want to select sample) before the app can show notes or artifacts.
 3. **Use folder `{name}`** — one option per non-sample directory under `inputs/` (do not offer stale `sample` as “use as-is”; use option 1 to reset + select sample).
-4. **None / use my notes** — if they need a new batch: tell them to create `inputs/{name}/`, dump `.md`/`.txt` notes (separate files or one file with `---` — both fine), then re-run.
+4. **None / use my notes** — if they need a new batch: tell them to create `inputs/{name}/`, dump `.md`/`.txt` notes (separate files, or one file with divider lines such as `---`, `<hr>`, or `***`), then re-run. You decide which dividers are a new idea and which are a section of the same article.
 
 **B. Mid-session** — offer continue first, with phase-specific wording:
 
@@ -464,32 +480,33 @@ Only after the user confirms Phase 1 is done:
 
 1. Set `app.config.json` `"phase": 2`.
 2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: tasks|reference|articleCandidates` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`**, and applying whole-section guidance (tagging / heading style / ordering) as needed.
-3. Read `phase1-regions.md` if it exists. A listed split starts a new note at that line; a listed join keeps that line with the previous note. Apply `---` / blank-line boundaries everywhere else. Do not wipe `phase1-regions.md`.
+3. Read `phase1-regions.md` if it exists. A listed split starts a new note at that line; a listed join keeps that line with the previous note. Judge every divider (`--` / `---` / `------`, `<hr>`, `**`, or two or more blank lines) as a new idea or as a section of the same article, and write joins for the sections. One blank line is paragraph space when any divider exists. Do not wipe `phase1-regions.md`.
 4. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
 5. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
 6. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
 7. Account for every line in `blame` — fidelity first; do not silently drop details.
-8. Write `phase2.json` (items may omit `tags` for now, or use `[]`). Do **not** delete `phase2-suggestions.md` or `phase1-regions.md`.
-9. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, or detail is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** accordingly. Also remind them they can:
+8. Tag every organized item (`tasks`, `reference`, `articleCandidates`) and **always write `filterLayout`**, using the tagging and `filterLayout` rules below. Related notes share tags. On a rewrite, keep every tag currently on the item and add any AI tag that is not already there (dedupe case-insensitively). Do not leave an item untagged, and do not delete a tag that is still on the item. Do **not** delete `phase2-suggestions.md` or `phase1-regions.md`.
+9. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, detail, or tag is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** and retag accordingly. Also remind them they can:
    - **green-check** items as they review;
-   - **add tags** or **move items** between Scattered / Reference / Articles (and rearrange within a panel);
+   - see the tags already on each card and in the **Filter** bar, and add, remove, or rename them if one is wrong;
+   - **move items** between Scattered / Reference / Articles (and rearrange within a panel);
    - those panel edits **save into `phase2.json`** via the PHP endpoint so this chat can see them later;
-   - **Phase 3 will ultimately tag the items for you** by area — manual tags in the app are optional;
+   - Phase 3 locks Suggest / green-check and only fills tags that are still missing — tags first appear here in Phase 2;
    - then **return to this chat** so you can apply Suggest notes (re-read `phase2-suggestions.md` + `phase2.json`), or say Phase 2 looks good and start Phase 3.
 
-### 3. Phase 3 — auto-tag by area (then lock)
+### 3. Phase 3 — refresh tags, then lock
 
-Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
+Tags are already on the cards from Phase 2. Phase 3 does not wait to invent them. Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 
-1. **Re-read** `inputs/{folder}/phase2-suggestions.md` (if present) **and** `phase2.json`. If suggestion notes are still pending, **apply them first** as a Phase 2 content rewrite (grouping / heading (`title`) and/or `body` / buckets / fidelity), then continue. Phase 3 itself does not keep a Suggest loop.
+1. **Re-read** `inputs/{folder}/phase2-suggestions.md` (if present) **and** `phase2.json`. If suggestion notes are still pending, **apply them first** as a Phase 2 content rewrite (grouping / heading (`title`) and/or `body` / buckets / fidelity / tags), then continue. Phase 3 itself does not keep a Suggest loop.
 2. **Re-read** `phase2.json` again so any browser moves/tags/reorder are included.
 3. Set `app.config.json` `"phase": 3`.
-4. Tag every organized item (`tasks`, `reference`, `articleCandidates`) so related notes share tags.
-5. **Always write `filterLayout`** in `phase2.json` (required, not optional): order all tags into related groups and insert `{ "type": "divider" }` **between major areas** so the Filter bar is scannable. Prefer a `{ "type": "heading", "name": "…" }` before each major group when the area label is clear. Include every tag used on any item. Do not leave a flat ungrouped tag list. If the user already ordered tags/dividers/headings in the app, keep their order and headings where it still makes sense and only insert missing tags (with dividers for new major areas).
+4. Fill any organized item that is still missing tags, using the tagging rules below. **Preserve** tags the user already set; merge, do not replace their list.
+5. **Refresh `filterLayout`** with the same rules as Phase 2: keep the user’s order, headings, and dividers where they still make sense, and only insert missing tags (with dividers for new major areas).
 6. Write the updated `tags` + `filterLayout` (and keep `blame` / bucket placement / user edits / `checked`) back to `phase2.json`. Do **not** wipe `phase2-suggestions.md`.
 7. Tell the user to refresh `index.php`: Phase 3 is **locked in** — no Suggest buttons, no green-check marking. The app’s job now is to **filter by tag and Copy** cards (or whole panels) into their permanent notes app. Tag/move tweaks still save to `phase2.json`; return to chat only to refine tags if needed. **Always mention** they can return to Phase 2 anytime by saying **“Revert to Phase 2”** in this chat, then refreshing the app (Suggest / green-check unlock; organized notes stay).
 
-#### Tagging rules
+#### Tagging rules (Phase 2 first write; Phase 3 only fills gaps)
 
 - Prefer a small hierarchy you can **chunk up or down**: e.g. supercategory → category → subcategory (`linux` → `nginx` → `certs`), or broader/narrower area labels that cluster the same idea.
 - An item may have **more than one tag**.
@@ -498,9 +515,9 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 - **Preserve** any tags the user already added in the app; merge AI tags with theirs (dedupe case-insensitively).
 - Do not invent tags that contradict the item’s content; when unsure, use a broader category tag.
 
-#### `filterLayout` rules (Phase 3 — always)
+#### `filterLayout` rules (Phase 2 and Phase 3 — always)
 
-- **Always** emit `filterLayout` when writing Phase 3 `phase2.json`.
+- **Always** emit `filterLayout` when writing Phase 2 or Phase 3 `phase2.json`. The app shows these groups in the Filter bar as soon as Phase 2 is on screen.
 - Group related tags together (same area / hierarchy), then put a divider between groups.
 - Optionally name each group with `{ "type": "heading", "name": "…" }` immediately before that group’s tags (after a divider, or at the start for the first group). Headings are labels only — not filterable tags.
 - Example shape: heading `Web` → `nginx`, `certs` → divider → heading `Containers` → `docker`, `compose` → divider → `node`, `tooling`.
@@ -520,15 +537,15 @@ Only after the user confirms Phase 2 is done (or explicitly asks for Phase 3):
 8. Phase 1 artifacts must be visible in the app after refresh.
 9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure: prefer blocked `link` panel (or `YouTube (lookup failed)` fallback).
 10. Every non-YouTube URL and every `*.url.txt`: try fetch; set `link` with intent from surrounding text; on failure `blocked: true` and wait for app paste (`userPaste`/`userNote`). Preserve pastes across rewrites. After paste: derive `title`/`about`, set `added: true`.
-11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits and joins (same rules as the Phase 1 app: dash breaks, `------` fences, blank lines only when there is no dash break, automatic recolor so neighbors differ). Do not wipe it.
+11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits and joins. Judge each divider yourself (`--`, `---`, `------`, `<hr>`, a line of asterisks, or two or more blank lines in a row): a new idea stays split; a section of the same idea or article is joined. One blank line is paragraph space when any divider exists. Dash length does not decide. Single blank lines are the candidates only when the file has no divider. Neighboring notes never share a color. Do not wipe `phase1-regions.md`.
 12. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file.
 13. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`. Link items reuse Phase 1 `link.title` / `link.about` when added.
-14. Phase 2: every line in every note file appears in `blame`.
+14. Phase 2: every line in every note file appears in `blame`. Every organized item has area tags, and `filterLayout` groups those tags for the Filter bar. Preserve tags the user already edited in the app.
 15. Do not advance to Phase 2 without explicit user confirmation.
-16. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body`); they may also tag/move (writes `phase2.json`); Phase 3 will auto-tag.
-17. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite before tagging.
+16. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail, tag → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body` and retag); tags are already on each card and in the Filter bar (writes `phase2.json`). Phase 3 only fills tags that are still missing, then locks review.
+17. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite, including tags, before filling any tag that is still missing.
 18. Do not advance to Phase 3 without explicit user confirmation.
-19. Phase 3: tag all organized items; preserve user tags; **always write `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
+19. Phase 3: keep the Phase 2 tags; fill any item that is still untagged; preserve user tags; **refresh `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
 20. On **“Revert to Phase 2”**: set `"phase": 2` (keep folder + artifacts); tell them to refresh the app; resume Phase 2.
 21. After each write, remind the user how to return to Cursor / Claude Code to continue (Phase 3: optional tag refine, or **“Revert to Phase 2”**).
 

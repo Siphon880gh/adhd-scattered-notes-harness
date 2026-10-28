@@ -1,4 +1,6 @@
 (function () {
+  var isPhasePreview = document.body.getAttribute("data-phase-preview") === "1";
+
   function qs(sel, root) {
     return (root || document).querySelector(sel);
   }
@@ -93,8 +95,8 @@
     if (!noteModal) return;
     if (open) {
       noteModalLastFocus = document.activeElement;
-      if (noteModalTitle) noteModalTitle.textContent = title || "";
-      if (noteModalBody) noteModalBody.textContent = body || "";
+      if (noteModalTitle) noteModalTitle.innerHTML = linkifyNote(title || "");
+      if (noteModalBody) noteModalBody.innerHTML = linkifyNote(body || "");
       noteModal.setAttribute("data-full-text", body || "");
       noteModal.hidden = false;
       document.body.style.overflow = "hidden";
@@ -144,6 +146,88 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function linkifyNoteLabel(label) {
+    label = String(label || "").trim();
+    var previous = null;
+    while (previous !== label) {
+      previous = label;
+      label = label.replace(/^(\*\*|__|\*|_)(.+)\1$/, "$2").trim();
+    }
+    return label;
+  }
+
+  function linkifyNoteTrimUrl(url) {
+    var tail = "";
+    while (url && /[.,;:!?'"\]}>]$/.test(url)) {
+      tail = url.slice(-1) + tail;
+      url = url.slice(0, -1);
+    }
+    while (url.slice(-1) === ")" && (url.split(")").length - 1) > (url.split("(").length - 1)) {
+      tail = ")" + tail;
+      url = url.slice(0, -1);
+    }
+    return { url: url, tail: tail };
+  }
+
+  function linkifyNoteUrl(url) {
+    url = String(url || "").trim();
+    var match = url.match(/^(https?):\/\/([^/?#\s]+)/i);
+    if (!match || !match[2]) return "";
+    return url;
+  }
+
+  function linkifyNote(text) {
+    text = String(text || "");
+    var pattern = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g;
+    var out = "";
+    var last = 0;
+    var match;
+    while ((match = pattern.exec(text))) {
+      var start = match.index;
+      if (start < last) continue;
+      if (start > 0 && /[\w/]/.test(text.charAt(start - 1)) && !match[1]) {
+        continue;
+      }
+      var end = start + match[0].length;
+      var url = "";
+      var label = "";
+      var tail = "";
+      if (match[2]) {
+        url = match[2];
+        label = linkifyNoteLabel(match[1]);
+        var before = text.slice(Math.max(0, start - 2), start);
+        var after = text.slice(end, end + 2);
+        if ((before === "**" && after === "**") || (before === "__" && after === "__")) {
+          start -= 2;
+          end += 2;
+        }
+      } else {
+        var trimmed = linkifyNoteTrimUrl(match[3]);
+        url = trimmed.url;
+        tail = trimmed.tail;
+        end = start + url.length;
+        label = url;
+      }
+      var safe = linkifyNoteUrl(url);
+      out += escapeHtml(text.slice(last, start));
+      if (!safe) {
+        out += escapeHtml(text.slice(start, end + tail.length));
+        last = end + tail.length;
+        continue;
+      }
+      out +=
+        '<a class="note-link" href="' +
+        escapeHtml(safe) +
+        '" target="_blank" rel="noopener noreferrer">' +
+        escapeHtml(label || safe) +
+        "</a>" +
+        escapeHtml(tail);
+      last = end + tail.length;
+    }
+    out += escapeHtml(text.slice(last));
+    return out;
   }
 
   function noteCopyPayload(title, body) {
@@ -515,7 +599,8 @@
   }
 
   qsa("[data-blame-line]").forEach(function (line) {
-    line.addEventListener("click", function () {
+    line.addEventListener("click", function (e) {
+      if (e.target.closest("a[href]")) return;
       onBlameLineActivate(line);
     });
     line.addEventListener("keydown", function (e) {
@@ -638,6 +723,7 @@
   }
 
   function saveOrganized() {
+    if (isPhasePreview) return;
     if (!organizedState) return;
     syncFilterLayout();
     var body = JSON.stringify({
@@ -675,6 +761,7 @@
   }
 
   function scheduleSave() {
+    if (isPhasePreview) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(saveOrganized, 200);
   }
@@ -701,7 +788,7 @@
   }
 
   function saveSuggestions() {
-    if (reviewLocked) return;
+    if (isPhasePreview || reviewLocked) return;
     fetch("index.php?action=save-suggestions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -712,7 +799,7 @@
   }
 
   function scheduleSuggestionsSave() {
-    if (reviewLocked) return;
+    if (isPhasePreview || reviewLocked) return;
     if (suggestionsSaveTimer) clearTimeout(suggestionsSaveTimer);
     suggestionsSaveTimer = setTimeout(saveSuggestions, 300);
   }
@@ -1166,7 +1253,7 @@
 
     var heading = document.createElement("h3");
     heading.className = "notebook-note__title";
-    heading.textContent = title;
+    heading.innerHTML = linkifyNote(title);
 
     var copyBtn = document.createElement("button");
     copyBtn.type = "button";
@@ -1183,7 +1270,7 @@
 
     var bodyEl = document.createElement("div");
     bodyEl.className = "notebook-note__body";
-    bodyEl.textContent = body || "";
+    bodyEl.innerHTML = linkifyNote(body || "");
 
     var meta = document.createElement("div");
     meta.className = "notebook-note__meta";
@@ -2876,6 +2963,7 @@
       var checkBtn = e.target.closest("[data-check-item]");
       var titleEl = e.target.closest(".item-card__title-row > h3");
       if (checkBtn || titleEl) {
+        if (e.target.closest("a[href]")) return;
         if (reviewLocked) return;
         if ((checkBtn || titleEl).closest(".is-rearranging")) return;
         var checkCard = (checkBtn || titleEl).closest(".item-card[data-org-id]");
@@ -3519,6 +3607,7 @@
     }
 
     function savePhase1Suggestions() {
+      if (isPhasePreview) return Promise.resolve({ ok: false });
       return fetch("index.php?action=save-phase1-suggestions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3535,6 +3624,7 @@
     }
 
     function schedulePhase1SuggestSave() {
+      if (isPhasePreview) return;
       if (phase1SuggestTimer) clearTimeout(phase1SuggestTimer);
       phase1SuggestTimer = setTimeout(savePhase1Suggestions, 300);
     }
@@ -3590,6 +3680,7 @@
     }
 
     function saveUrlPaste(block) {
+      if (isPhasePreview) return;
       var file = block.getAttribute("data-url-file") || "";
       var line = parseInt(block.getAttribute("data-url-line") || "0", 10);
       var noteEl = qs("[data-url-note]", block);
@@ -4029,8 +4120,8 @@
     }
     var mode = el.getAttribute("data-thought-mode") || "dashes";
     var noun = count === 1 ? "note" : "notes";
-    var how = mode === "dashes"
-      ? "split on a line of dashes (---)"
+    var how = (mode === "dashes" || mode === "dividers")
+      ? "split on divider lines or two blank lines"
       : "split on blank lines";
     var text = count + " distinct " + noun + ", " + how + ".";
     if (el.getAttribute("data-thought-edited") === "1") {
@@ -4115,6 +4206,7 @@
   var phase1RegionSaveTimer = 0;
 
   function savePhase1Regions() {
+    if (isPhasePreview) return Promise.resolve({ ok: false });
     var doc = qs("[data-phase1-lines]");
     if (!doc) return Promise.resolve({ ok: false });
     var file = doc.getAttribute("data-phase1-file") || "";
@@ -4645,7 +4737,7 @@
         var tip = [indexText, rangeText, previewText].map(function (el) {
           return el ? (el.textContent || "").trim() : "";
         }).filter(Boolean).join(" · ");
-        btn.title = tip;
+        btn.removeAttribute("title");
         btn.setAttribute("aria-label", tip || ("Note " + id));
         var label = document.createElement("span");
         label.className = "minimap__note-label";
@@ -4733,6 +4825,78 @@
       placeViewport();
       markCurrent();
     }
+
+    var mapToast = qs("[data-map-toast]");
+    var mapToastId = "";
+
+    function minimapNoteToast(section) {
+      var parts = [];
+      qsa(".line", section).forEach(function (line) {
+        if (line.classList.contains("line--added")) return;
+        var textEl = qs(".line__text", line);
+        if (!textEl) return;
+        var text = String(textEl.textContent || "").replace(/\r\n|\r|\n/g, "  ");
+        parts.push(text.replace(/^\s+|\s+$/g, ""));
+      });
+      var text = parts.join("  ").replace(/^\s+|\s+$/g, "");
+      var max = 140;
+      if (text.length > max) {
+        text = text.slice(0, max - 1).replace(/\s+$/, "") + "…";
+      }
+      return text;
+    }
+
+    function mapToastEl() {
+      if (mapToast && mapToast.isConnected) return mapToast;
+      mapToast = document.createElement("div");
+      mapToast.className = "map-toast";
+      mapToast.setAttribute("data-map-toast", "");
+      mapToast.setAttribute("role", "status");
+      mapToast.setAttribute("aria-live", "polite");
+      mapToast.hidden = true;
+      document.body.appendChild(mapToast);
+      return mapToast;
+    }
+
+    function hideMapToast() {
+      mapToastId = "";
+      var toast = mapToastEl();
+      toast.classList.remove("is-visible");
+      toast.hidden = true;
+    }
+
+    function showMapToast(btn) {
+      var id = btn.getAttribute("data-minimap-note") || "";
+      if (!id || id === mapToastId) return;
+      var section = qs('[data-thought="' + id.replace(/"/g, "") + '"]', doc);
+      var text = section ? minimapNoteToast(section) : "";
+      if (!text) {
+        hideMapToast();
+        return;
+      }
+      mapToastId = id;
+      var toast = mapToastEl();
+      toast.textContent = text;
+      toast.hidden = false;
+      toast.classList.add("is-visible");
+    }
+
+    function noteAt(clientY) {
+      var hit = null;
+      buttons.forEach(function (btn) {
+        var rect = btn.getBoundingClientRect();
+        if (clientY >= rect.top && clientY < rect.bottom) hit = btn;
+      });
+      return hit;
+    }
+
+    track.addEventListener("mousemove", function (e) {
+      var hit = noteAt(e.clientY);
+      if (hit) showMapToast(hit);
+      else hideMapToast();
+    });
+
+    track.addEventListener("mouseleave", hideMapToast);
 
     track.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-minimap-note]");
@@ -5043,4 +5207,64 @@
       });
     }
   })();
+
+  if (isPhasePreview) {
+    var previewEditSelector = [
+      "[data-thought-split]",
+      "[data-thought-split-at]",
+      "[data-thought-merge]",
+      "[data-thought-resize]",
+      "[data-phase1-suggest]",
+      "[data-url-note]",
+      "[data-url-paste]",
+      "[data-url-save]",
+      "[data-check-item]",
+      "[data-move-wrap]",
+      "[data-tag-form]",
+      "[data-tag-input]",
+      "[data-remove-tag]",
+      "[data-item-suggest]",
+      "[data-panel-suggest]",
+      "[data-panel-suggest-input]",
+      "[data-rearrange-toggle]",
+    ].join(",");
+
+    document.addEventListener(
+      "click",
+      function (e) {
+        if (e.target.closest("a[href]")) return;
+        if (!e.target.closest(previewEditSelector)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        showAppToast("Preview only. Back to the current phase to edit.");
+      },
+      true
+    );
+    document.addEventListener(
+      "pointerdown",
+      function (e) {
+        if (!e.target.closest("[data-thought-resize]")) return;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true
+    );
+    document.addEventListener(
+      "dragstart",
+      function (e) {
+        if (!e.target.closest(".item-card, .notebook, .tag-filter__chip, [data-filter-divider]")) return;
+        e.preventDefault();
+      },
+      true
+    );
+    document.addEventListener(
+      "beforeinput",
+      function (e) {
+        if (!e.target.closest("[data-phase1-root], [data-phase2-root]")) return;
+        if (!e.target.closest("textarea, input")) return;
+        e.preventDefault();
+      },
+      true
+    );
+  }
 })();

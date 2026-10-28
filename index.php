@@ -508,6 +508,62 @@ if ($viewingSnapshot !== null) {
     $folderExists = true;
 }
 
+$isPhasePreview = false;
+if ($viewingSnapshot === null && $folderExists && isset($_GET['preview'])) {
+    $requestedPreview = (int) $_GET['preview'];
+    if ($requestedPreview >= 1 && $requestedPreview <= 3 && $requestedPreview !== (int) $livePhase) {
+        $phase = $requestedPreview;
+        $isPhasePreview = true;
+    }
+}
+
+function phase_name(int $phase): string
+{
+    if ($phase === 2) {
+        return 'Sort notes and review tags';
+    }
+    if ($phase === 3) {
+        return 'Filter and copy into your notes';
+    }
+
+    return 'Review marks, links, and boundaries';
+}
+
+function phase_label(int $phase): string
+{
+    return 'Phase ' . $phase . ' — ' . phase_name($phase);
+}
+
+/**
+ * Dots for the phases before and after the live one. The live phase stays the
+ * dominant label. Other phases are a preview only and do not change app.config.json.
+ */
+function render_phase_carousel(int $livePhase, int $viewPhase, bool $isPhasePreview): void
+{
+    echo '<nav class="phase-carousel" aria-label="Preview phases">';
+    for ($n = 1; $n <= 3; $n++) {
+        $isCurrent = $n === $livePhase;
+        $isViewing = $n === $viewPhase;
+        $named = phase_label($n);
+        if ($isCurrent) {
+            $currentAttrs = $isPhasePreview ? '' : ' aria-current="page"';
+            echo '<a class="phase-carousel__current" href="index.php" title="' . e($named . ', current') . '"' . $currentAttrs . '>Phase ' . $n . '</a>';
+            continue;
+        }
+        $class = 'phase-carousel__dot' . ($isViewing ? ' is-preview' : '');
+        $label = 'Preview ' . $named;
+        echo '<a class="' . $class . '" href="index.php?preview=' . $n . '" title="' . e($label) . '" aria-label="' . e($label) . '"';
+        if ($isViewing) {
+            echo ' aria-current="true"';
+        }
+        echo '></a>';
+    }
+    if ($isPhasePreview) {
+        echo '<span class="phase-carousel__preview">Previewing Phase ' . (int) $viewPhase . '</span>';
+    }
+    echo '</nav>';
+}
+
 /**
  * @return array<string, string>
  */
@@ -684,7 +740,7 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
             echo '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
             echo '</button>';
         }
-        echo '<h3>' . e($title) . '</h3>';
+        echo '<h3>' . linkify_note($title) . '</h3>';
         echo '<button type="button" class="item-card__copy" data-copy-item title="Copy full note text" aria-label="Copy full note text">';
         echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
         echo '<span>Copy</span>';
@@ -706,7 +762,7 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
         echo '</div>';
         if ($body !== '') {
             echo '<div class="item-card__body">';
-            echo '<p class="item-card__body-text">' . e($previewBody) . '</p>';
+            echo '<p class="item-card__body-text">' . linkify_note($previewBody) . '</p>';
             if ($needsTruncate) {
                 echo '<button type="button" class="item-card__read-more" data-read-more>Read more</button>';
             }
@@ -767,7 +823,7 @@ $isSnapshotView = $viewingSnapshot !== null;
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= e(asset_url('assets/app.css')) ?>">
 </head>
-<body<?= $isSnapshotView ? ' class="is-snapshot-view"' : '' ?>>
+<body class="<?= trim(($isSnapshotView ? 'is-snapshot-view' : '') . ($isPhasePreview ? ' is-phase-preview' : '')) ?>"<?php if ($isPhasePreview): ?> data-phase-preview="1" data-live-phase="<?= (int) $livePhase ?>"<?php endif; ?>>
 <header class="app-header">
     <a href="index.php" class="app-header__brand">Scattered Notes</a>
     <div class="app-header__meta">
@@ -778,11 +834,11 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php elseif ($showEmpty): ?>
             no folder configured
         <?php else: ?>
-            inputs/<?= e($liveFolder) ?> · phase <?= (int) $livePhase ?>
+            <span class="app-header__folder">inputs/<?= e($liveFolder) ?></span>
         <?php endif; ?>
     </div>
     <div class="app-header__actions">
-        <?php if (!$showEmpty && (int) $phase === 1): ?>
+        <?php if (!$showEmpty && !$isPhasePreview && (int) $livePhase === 1): ?>
             <div class="app-header__cluster" data-phase1-history>
                 <div class="app-header__segment" role="group" aria-label="Undo and redo">
                     <button type="button" class="app-header__segment-btn" data-history-undo disabled title="Undo (⌘Z)">Undo</button>
@@ -801,6 +857,7 @@ $isSnapshotView = $viewingSnapshot !== null;
             <span class="app-header__sep" aria-hidden="true"></span>
         <?php endif; ?>
         <?php $inputProjects = list_input_projects(); ?>
+        <div class="app-header__scope">
         <div class="app-header__projects" data-projects-menu data-current-project="<?= e($liveFolder) ?>">
             <button type="button"
                     class="app-header__btn app-header__btn--menu"
@@ -828,7 +885,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                         data-switch-project="<?= e($projectName) ?>"
                                         <?php if ($projectCurrent): ?>aria-current="true"<?php endif; ?>>
                                     <span class="app-header__projects-name">inputs/<?= e($projectName) ?></span>
-                                    <span class="app-header__projects-meta muted">Phase <?= (int) $projectPhase ?></span>
+                                    <span class="app-header__projects-meta muted" title="<?= e(phase_label((int) $projectPhase)) ?>">Phase <?= (int) $projectPhase ?></span>
                                 </button>
                             </li>
                         <?php endforeach; ?>
@@ -836,7 +893,8 @@ $isSnapshotView = $viewingSnapshot !== null;
                 <?php endif; ?>
             </div>
         </div>
-        <?php if (!$isSnapshotView && $liveFolder !== '' && $livePhase === 3 && is_file(input_dir($liveFolder) . '/phase2.json')): ?>
+        <div class="app-header__scope-nest">
+        <?php if (!$isSnapshotView && !$isPhasePreview && $liveFolder !== '' && $livePhase === 3 && is_file(input_dir($liveFolder) . '/phase2.json')): ?>
             <button type="button" class="app-header__btn" data-save-snapshot title="Save Phase 3 as a named snapshot">
                 Save snapshot as
             </button>
@@ -895,6 +953,8 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php if ($isSnapshotView): ?>
             <a class="app-header__btn app-header__btn--link" href="index.php" title="Leave snapshot; keep live phase">Exit snapshot</a>
         <?php endif; ?>
+        </div>
+        </div>
         <?php if (!$showEmpty && ($phase === 2 || $phase === 3)): ?>
             <button type="button"
                     class="app-header__menu"
@@ -944,7 +1004,7 @@ $isSnapshotView = $viewingSnapshot !== null;
             Notes rarely land in one place; this harness meets that workflow: dump scattered notes first, process them later.
         </p>
         <p>
-            Chaotic, on-the-fly jotting from a fast ADHD brain is the point. It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a document is broken up with empty lines. Empty lines or dashes as dividers are fine—AI figures out the boundaries and sorts related thoughts into something usable: actionable or referable. You can even paste an entire article into a note full of other random thoughts, as long as you made a reasonable effort to mark it as a different idea (separated by empty lines or dashes). If the article already has dash lines, add twice the dash lines to separate the article from your other thoughts (e.g. article uses <code>---</code> → wrap it with <code>------</code>).
+            Chaotic, on-the-fly jotting from a fast ADHD brain is the point. It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a document is broken up with empty lines. Dividers are fine — dashes (<code>--</code>, <code>---</code>), <code>&lt;hr&gt;</code>, a line of asterisks, or two blank lines in a row. One blank line is just a paragraph break. The skill decides whether each divider starts a new idea or is only a section of the same article. You can paste an entire article into a note full of other random thoughts; mark it off with a divider, and the skill will keep the article together when its internal rules are just sections.
         </p>
         <p>
             Shorthands and symbols are welcome. When something is unclear, AI asks you to clarify, then builds a dictionary of your shorthands so it can understand your notes the way you write them.
@@ -961,7 +1021,7 @@ $isSnapshotView = $viewingSnapshot !== null;
         <ol>
             <li>
                 Dump scattered notes as <code>.md</code> and/or <code>.txt</code> files into a folder under <code>inputs/</code>, e.g. <code>inputs/linux-dump/</code>.
-                One thought per file or many thoughts in one file (use <code>---</code> separators) — both are fine.
+                One thought per file or many thoughts in one file — both are fine. A divider (<code>--</code>, <code>---</code>, <code>&lt;hr&gt;</code>, <code>***</code>, or two blank lines) marks a possible new idea; the skill decides whether it is a new idea or a section of the same article.
             </li>
             <li>
                 In Cursor or Claude Code, run the skill at
@@ -977,7 +1037,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                     <li>
                         <button type="button" class="app-header__btn" data-switch-project="<?= e($projectName) ?>">
                             inputs/<?= e($projectName) ?>
-                            <span class="muted">Phase <?= (int) project_phase_for($config, $projectName) ?></span>
+                            <span class="muted"><?= e(phase_label((int) project_phase_for($config, $projectName))) ?></span>
                         </button>
                     </li>
                 <?php endforeach; ?>
@@ -989,7 +1049,7 @@ $isSnapshotView = $viewingSnapshot !== null;
     </main>
 <?php elseif ($phase === 1):
     $phase1Counts = phase1_review_counts($phase1, $noteFiles);
-    $phase1Jumps = phase1_review_jumps($phase1, $noteFiles, $activeFile);
+    $phase1Jumps = phase1_review_jumps($phase1, $noteFiles, $activeFile, $isPhasePreview ? (int) $phase : 0);
     $attentionTotal = (int) $phase1Counts['uncertain'] + (int) $phase1Counts['blocked'];
     render_count_bar([
         [
@@ -1012,8 +1072,11 @@ $isSnapshotView = $viewingSnapshot !== null;
         ],
     ], 'Phase 1 review counts', $attentionTotal > 0 ? 'attention' : 'links');
     ?>
-    <aside class="banner banner--warn">
-        <h2>Phase 1 — review marks, then return to chat</h2>
+    <aside class="banner banner--warn<?= $isPhasePreview ? ' banner--preview' : '' ?>">
+        <h2><?= e(phase_label(1)) ?></h2>
+        <div class="banner__phase">
+            <?php render_phase_carousel((int) $livePhase, (int) $phase, $isPhasePreview); ?>
+        </div>
         <p>
             Uncertain symbols and shorthand are highlighted. YouTube and fetched links show a green added descriptor.
             Blocked URLs open a paste panel — visit the page in your browser, describe what you need, and paste relevant text.
@@ -1021,9 +1084,12 @@ $isSnapshotView = $viewingSnapshot !== null;
         </p>
         <ul>
             <li>
-                Distinct notes are numbered in the file. A line that is only <code>---</code> starts a new note
-                (a longer <code>------</code> fence keeps shorter dashes inside that note).
-                Files with no dash break are split on blank lines. The map on the right is the whole file.
+                Distinct notes are numbered in the file. A divider line
+                (<code>--</code>, <code>---</code>, <code>&lt;hr&gt;</code>, <code>***</code>,
+                or two blank lines in a row)
+                starts a candidate note. One blank line does not. The skill decides whether that divider is a new idea
+                or only a section of the same article. Files with no divider are split on blank lines.
+                The map on the right is the whole file.
                 If a boundary is wrong, use <strong>Split</strong> inside a note or <strong>Merge up</strong> / <strong>Merge down</strong> on the note header.
                 Drag the top edge of a note, except the first one, or the bottom edge, except the last.
                 When you let go: if you dragged back into the note, choose to split those lines into a new idea or let the neighbor take them; if you dragged into the neighbor, take those lines into this note.
@@ -1083,7 +1149,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         >+</button>
                         <div class="file-nav__col-tip" id="file-nav-tip-added" data-section-info-tip role="tooltip">
                             <strong>Added enrichments</strong>
-                            Green “+” lines from YouTube or fetched web links. Informational — not urgent like !.
+                            Green “+” lines from YouTube or fetched web links. Informational.
                         </div>
                     </div>
                 </div>
@@ -1114,7 +1180,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                             : 'No added enrichments';
                         ?>
                         <li>
-                            <a href="?file=<?= e(rawurlencode($name)) ?>" class="file-nav__row<?= $name === $activeFile ? ' is-active' : '' ?><?= $attention > 0 ? ' has-attention' : '' ?>">
+                            <a href="?file=<?= e(rawurlencode($name)) ?><?= $isPhasePreview ? '&amp;preview=' . (int) $phase : '' ?>" class="file-nav__row<?= $name === $activeFile ? ' is-active' : '' ?><?= $attention > 0 ? ' has-attention' : '' ?>">
                                 <span class="file-nav__name"><?= e($name) ?></span>
                                 <span
                                     class="file-nav__badge file-nav__badge--attention<?= $attention > 0 ? ' is-on' : '' ?>"
@@ -1156,8 +1222,8 @@ $isSnapshotView = $viewingSnapshot !== null;
                 $regionEdited = ($regionOverrides['splits'] ?? []) !== [] || ($regionOverrides['joins'] ?? []) !== [];
                 if ($thoughtCount === 0) {
                     $thoughtSummary = 'No note text in this file yet.';
-                } elseif ($phase1ThoughtMode === 'dashes') {
-                    $thoughtSummary = $thoughtCount . ' distinct ' . $thoughtNoun . ', split on a line of dashes (---).';
+                } elseif ($phase1ThoughtMode === 'dividers' || $phase1ThoughtMode === 'dashes') {
+                    $thoughtSummary = $thoughtCount . ' distinct ' . $thoughtNoun . ', split on divider lines or two blank lines.';
                 } else {
                     $thoughtSummary = $thoughtCount . ' distinct ' . $thoughtNoun . ', split on blank lines.';
                 }
@@ -1250,7 +1316,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                             <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" id="<?= e(phase1_anchor('yt', $activeFile, $n)) ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
                                 <div class="line__n">+</div>
                                 <div class="line__body">
-                                    <div class="line__text"><?= e($addedText) ?></div>
+                                    <div class="line__text"><?= linkify_note($addedText) ?></div>
                                     <div class="line__toolbar">
                                         <div class="phase1-suggest" data-phase1-suggest data-phase1-suggest-kind="enrichment" data-phase1-suggest-key="<?= e($enrichmentKey) ?>">
                                             <button type="button" class="phase1-suggest__toggle" data-phase1-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for this enrichment">
@@ -1287,7 +1353,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                             <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" id="<?= e(phase1_anchor('link', $activeFile, $n)) ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
                                 <div class="line__n">+</div>
                                 <div class="line__body">
-                                    <div class="line__text"><?= e($linkAddedText) ?></div>
+                                    <div class="line__text"><?= linkify_note($linkAddedText) ?></div>
                                     <div class="line__toolbar">
                                         <div class="phase1-suggest" data-phase1-suggest data-phase1-suggest-kind="enrichment" data-phase1-suggest-key="<?= e($enrichmentKey) ?>">
                                             <button type="button" class="phase1-suggest__toggle" data-phase1-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for this enrichment">
@@ -1315,7 +1381,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?>" id="<?= e(phase1_anchor('line', $activeFile, $n)) ?>">
                             <div class="line__n"><?= $n > 0 ? (int) $n : '' ?></div>
                             <div class="line__body">
-                                <div class="line__text"><?= e($text) ?></div>
+                                <div class="line__text"><?= linkify_note($text) ?></div>
                                 <?php
                                 $flagBits = '';
                                 foreach ($marks as $mark):
@@ -1459,7 +1525,6 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 class="minimap__note<?= e($markClass) ?>"
                                 data-minimap-note="<?= (int) $thought['id'] ?>"
                                 style="--thought-hue: <?= (int) $thought['hue'] ?>; --thought-lines: <?= max(1, (int) $thought['lines']) ?>"
-                                title="<?= e($tip) ?>"
                                 aria-label="<?= e($tip) ?>">
                             <span class="minimap__note-label"><?= (int) $thought['id'] ?></span>
                         </button>
@@ -1501,11 +1566,15 @@ $isSnapshotView = $viewingSnapshot !== null;
         </ul>
     </aside>
     <?php elseif ($phase === 3): ?>
-    <aside class="banner">
-        <h2>Phase 3 — locked in</h2>
+    <aside class="banner<?= $isPhasePreview ? ' banner--preview' : '' ?>">
+        <h2><?= e(phase_label(3)) ?></h2>
+        <div class="banner__phase">
+            <?php render_phase_carousel((int) $livePhase, (int) $phase, $isPhasePreview); ?>
+        </div>
         <p>
-            Review is finished: no Suggest notes and no green-check marking in this phase.
-            Use <strong>Panels</strong> to filter by tag and Copy, or switch to <strong>Notebook</strong> for an UpNote-style sidebar of filter groups → notebooks.
+            Filter by tag and copy the finished notes into your own app.
+            Suggest and green-check are off.
+            Use <strong>Panels</strong> to filter and Copy, or switch to <strong>Notebook</strong> for an UpNote-style sidebar of filter groups → notebooks.
             You can still tweak tags, move items, and rearrange. Use the hamburger for original notes with per-line accounting.
             <strong>Save snapshot as</strong> stores this Phase 3 under <code>snapshots/</code> so you can reopen it anytime without changing your live phase.
         </p>
@@ -1515,8 +1584,11 @@ $isSnapshotView = $viewingSnapshot !== null;
         </ul>
     </aside>
     <?php else: ?>
-    <aside class="banner">
-        <h2>Phase 2 — organized notes</h2>
+    <aside class="banner<?= $isPhasePreview ? ' banner--preview' : '' ?>">
+        <h2><?= e(phase_label(2)) ?></h2>
+        <div class="banner__phase">
+            <?php render_phase_carousel((int) $livePhase, (int) $phase, $isPhasePreview); ?>
+        </div>
         <p>
             Review whether the AI classified each note correctly as a task or not:
             open <strong>Suggest</strong> and write e.g. “not a task — make this Reference” or “this should be a task”.
@@ -1526,8 +1598,8 @@ $isSnapshotView = $viewingSnapshot !== null;
             Also check that it did not drop lines unnecessarily, and that each card reads the way you meant.
             Want a note changed (different title, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on a section header for whole-panel feedback (tagging, heading style, ordering) — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
             Green-check items as you review them (saved into <code>phase2.json</code>).
-            Move items between panels, or add tags on the right (filter chips appear at the top).
-            Phase 3 will ultimately tag items for you by area — optional tags here are fine in the meantime.
+            Tags are already on each card and in the Filter bar. Add, remove, or rename one on the right if it is wrong.
+            When this looks right, Phase 3 turns off Suggest and green-check so you can filter by tag and copy the notes into your own app.
             Review original scattered notes and which lines were dropped by opening
             <span class="banner__menu-icon" aria-hidden="true" title="Menu icon">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1975,7 +2047,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                     <?= $n > 0 ? $n : '' ?>
                                 </div>
                                 <div class="blame-line__main">
-                                    <div class="blame-line__text"><?= e($text) ?></div>
+                                    <div class="blame-line__text"><?= linkify_note($text) ?></div>
                                     <div class="blame-line__comment">
                                         <?php if ($fate !== ''): ?>
                                             <span class="blame-line__fate"><?= e($fate) ?></span>
