@@ -821,6 +821,7 @@ body.is-phase-preview [data-thought-split-at],
 body.is-phase-preview [data-thought-merge],
 body.is-phase-preview [data-thought-resize],
 body.is-phase-preview [data-phase1-suggest],
+body.is-phase-preview [data-idea-suggest],
 body.is-phase-preview [data-url-block] textarea,
 body.is-phase-preview [data-url-block] button,
 body.is-phase-preview [data-check-item],
@@ -1213,19 +1214,74 @@ body.is-phase-preview .item-card__actions {
 }
 
 .thought-summary {
-  margin: -0.35rem 0 0.75rem;
+  margin: -0.35rem 0 0.35rem;
   color: var(--ink-muted);
   font-size: 0.85rem;
 }
 
+.thought-hint {
+  margin: 0 0 0.75rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
 .thought {
+  position: relative;
   scroll-margin-top: calc(var(--app-header-height) + var(--bucket-counts-height) + 0.45rem);
-  border-left: 3px solid hsl(var(--thought-hue) 62% 58%);
+  padding-left: 14px;
   background: var(--bg-panel);
 }
 
+.thought__edge {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.thought__edge::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: hsl(var(--thought-hue) 62% 58%);
+}
+
+.thought__edge:hover::before,
+.thought__edge:focus-visible::before,
+.thought.has-idea-suggestion .thought__edge::before,
+.thought.is-current .thought__edge::before {
+  width: 11px;
+  background: hsl(var(--thought-hue) 78% 68%);
+}
+
+.thought__edge:focus-visible {
+  outline: none;
+}
+
+.thought.has-idea-suggestion .thought__edge::after {
+  content: "";
+  position: absolute;
+  top: 0.4rem;
+  left: 1.5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+}
+
 .thought.is-current {
-  box-shadow: inset 3px 0 0 hsl(var(--thought-hue) 72% 64%);
+  box-shadow: none;
 }
 
 .thought.is-resize-receiver {
@@ -1334,6 +1390,8 @@ body.is-phase-preview .item-card__actions {
 }
 
 .thought__resize {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1635,6 +1693,33 @@ body.is-resizing-thought {
 .line__text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.line[data-line-suggest] {
+  cursor: pointer;
+}
+
+.line[data-line-suggest]:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.line.has-line-suggestion {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.phase1-note-suggest {
+  position: fixed;
+  z-index: 60;
+  width: min(28rem, calc(100vw - 1.5rem));
+  padding: 0.55rem 0.65rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+
+.phase1-note-suggest[hidden] {
+  display: none !important;
 }
 
 a.note-link {

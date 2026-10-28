@@ -225,7 +225,7 @@ if (
     $payload = is_string($raw) ? json_decode($raw, true) : null;
     if (!is_array($payload)) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with shorthands and/or enrichments.']);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with suggestions.']);
         exit;
     }
 
@@ -1096,6 +1096,11 @@ $isSnapshotView = $viewingSnapshot !== null;
                 Colors update on their own, and two notes in a row never share a color.
             </li>
             <li>
+                Click the colored edge of a note to leave a suggestion for that whole idea.
+                Click a line to leave a suggestion for that line’s text.
+                Both save to <code>phase1-suggestions.md</code> and are read when you start Phase 2.
+            </li>
+            <li>
                 For flagged shorthand: explain it in Cursor / Claude Code, <em>or</em> add an in-app <strong>Suggest</strong> note.
                 One Suggest for a shorthand covers every other flag of that same shorthand (they share the same comment).
             </li>
@@ -1233,6 +1238,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 ?>
                 <h1 class="panel-title" id="p1-file"><?= e($activeFile) ?></h1>
                 <p class="thought-summary" data-thought-summary data-thought-mode="<?= e($phase1ThoughtMode) ?>" data-thought-edited="<?= $regionEdited ? '1' : '0' ?>"><?= e($thoughtSummary) ?> The map is this whole file.</p>
+                <p class="thought-hint">Click the colored edge to suggest a change for that whole idea. Click a line to suggest a change for that line’s text. Both are saved for the next phase.</p>
                 <?php if ($phase1 === null): ?>
                     <p class="muted">
                         Showing raw lines — <code>phase1.json</code> is not present yet.
@@ -1265,6 +1271,8 @@ $isSnapshotView = $viewingSnapshot !== null;
                         $enrichmentSuggestion = (string) ($phase1Suggestions['enrichments'][$enrichmentKey] ?? '');
                         $hasEnrichmentSuggestion = $enrichmentSuggestion !== '';
                         $enrichmentFieldId = 'p1-enrich-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', $enrichmentKey);
+                        $lineKey = $activeFile . ':' . $n;
+                        $hasLineSuggestion = trim((string) ($phase1Suggestions['lines'][$lineKey] ?? '')) !== '';
                         $hasUncertain = false;
                         foreach ($marks as $mark) {
                             if (is_array($mark) && ($mark['type'] ?? '') === 'uncertain') {
@@ -1286,7 +1294,10 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 $rangeLabel = (int) $thought['start'] === (int) $thought['end']
                                     ? 'line ' . (int) $thought['start']
                                     : 'lines ' . (int) $thought['start'] . '–' . (int) $thought['end'];
-                                echo '<section class="thought" data-thought="' . (int) $thought['id'] . '" id="thought-' . (int) $thought['id'] . '" style="--thought-hue: ' . (int) $thought['hue'] . '">';
+                                $ideaKey = $activeFile . ':' . (int) $thought['start'] . '-' . (int) $thought['end'];
+                                $hasIdeaSuggestion = trim((string) ($phase1Suggestions['ideas'][$ideaKey] ?? '')) !== '';
+                                echo '<section class="thought' . ($hasIdeaSuggestion ? ' has-idea-suggestion' : '') . '" data-thought="' . (int) $thought['id'] . '" data-idea-key="' . e($ideaKey) . '" id="thought-' . (int) $thought['id'] . '" style="--thought-hue: ' . (int) $thought['hue'] . '">';
+                                echo '<button type="button" class="thought__edge" data-idea-suggest aria-label="Suggestion for this whole idea" title="Suggestion for this whole idea"></button>';
                                 echo '<header class="thought__head">';
                                 echo '<span class="thought__index">Note ' . (int) $thought['id'] . '</span>';
                                 echo '<span class="thought__range">' . e($rangeLabel) . '</span>';
@@ -1378,7 +1389,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 </div>
                             </div>
                         <?php endif; ?>
-                        <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?>" id="<?= e(phase1_anchor('line', $activeFile, $n)) ?>">
+                        <div class="line<?= $hasUncertain ? ' line--uncertain' : '' ?><?= $hasLineSuggestion ? ' has-line-suggestion' : '' ?>" id="<?= e(phase1_anchor('line', $activeFile, $n)) ?>" data-line-suggest data-line-key="<?= e($lineKey) ?>" title="Suggestion for this line">
                             <div class="line__n"><?= $n > 0 ? (int) $n : '' ?></div>
                             <div class="line__body">
                                 <div class="line__text"><?= linkify_note($text) ?></div>

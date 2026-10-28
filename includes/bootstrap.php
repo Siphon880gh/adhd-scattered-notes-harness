@@ -1618,13 +1618,20 @@ function phase1_shorthand_key(string $token): string
 
 /**
  * @param mixed $data
- * @return array{shorthands: array<string, string>, enrichments: array<string, string>}
+ * @return array{
+ *   shorthands: array<string, string>,
+ *   enrichments: array<string, string>,
+ *   ideas: array<string, string>,
+ *   lines: array<string, string>
+ * }
  */
 function normalize_phase1_suggestions($data): array
 {
     $out = [
         'shorthands' => [],
         'enrichments' => [],
+        'ideas' => [],
+        'lines' => [],
     ];
     if (!is_array($data)) {
         return $out;
@@ -1666,13 +1673,48 @@ function normalize_phase1_suggestions($data): array
         }
     }
 
+    $ideas = $data['ideas'] ?? null;
+    if (is_array($ideas)) {
+        foreach ($ideas as $id => $text) {
+            $itemId = trim((string) $id);
+            if (preg_match('/^(.+):(\d+)-(\d+)$/', $itemId, $match) !== 1) {
+                continue;
+            }
+            $start = (int) $match[2];
+            $end = (int) $match[3];
+            if ($start < 1 || $end < $start) {
+                continue;
+            }
+            $body = trim((string) $text);
+            if ($body === '') {
+                continue;
+            }
+            $out['ideas'][$match[1] . ':' . $start . '-' . $end] = $body;
+        }
+    }
+
+    $lines = $data['lines'] ?? null;
+    if (is_array($lines)) {
+        foreach ($lines as $id => $text) {
+            $itemId = trim((string) $id);
+            if ($itemId === '' || preg_match('/^.+:\d+$/', $itemId) !== 1) {
+                continue;
+            }
+            $body = trim((string) $text);
+            if ($body === '') {
+                continue;
+            }
+            $out['lines'][$itemId] = $body;
+        }
+    }
+
     return $out;
 }
 
 /**
  * Case-insensitive shorthand lookup.
  *
- * @param array{shorthands: array<string, string>, enrichments: array<string, string>} $suggestions
+ * @param array{shorthands: array<string, string>, enrichments: array<string, string>, ideas?: array<string, string>, lines?: array<string, string>} $suggestions
  */
 function phase1_shorthand_suggestion(array $suggestions, string $token): string
 {
@@ -1693,18 +1735,25 @@ function phase1_shorthand_suggestion(array $suggestions, string $token): string
 }
 
 /**
- * @return array{shorthands: array<string, string>, enrichments: array<string, string>}
+ * @return array{
+ *   shorthands: array<string, string>,
+ *   enrichments: array<string, string>,
+ *   ideas: array<string, string>,
+ *   lines: array<string, string>
+ * }
  */
 function parse_phase1_suggestions_md(string $raw): array
 {
     $out = [
         'shorthands' => [],
         'enrichments' => [],
+        'ideas' => [],
+        'lines' => [],
     ];
 
     $raw = str_replace(["\r\n", "\r"], "\n", $raw);
     $lines = explode("\n", $raw);
-    $section = null; // 'shorthand:{token}' | 'enrichment:{file:line}'
+    $section = null; // 'shorthand:{token}' | 'enrichment:{file:line}' | 'idea:{file:start-end}' | 'line:{file:line}'
     $buf = [];
 
     $flush = static function () use (&$section, &$buf, &$out): void {
@@ -1729,6 +1778,20 @@ function parse_phase1_suggestions_md(string $raw): array
             if ($id !== '') {
                 $out['enrichments'][$id] = $text;
             }
+            return;
+        }
+        if (strpos($section, 'idea:') === 0) {
+            $id = trim(substr($section, 5));
+            if ($id !== '') {
+                $out['ideas'][$id] = $text;
+            }
+            return;
+        }
+        if (strpos($section, 'line:') === 0) {
+            $id = trim(substr($section, 5));
+            if ($id !== '') {
+                $out['lines'][$id] = $text;
+            }
         }
     };
 
@@ -1741,6 +1804,16 @@ function parse_phase1_suggestions_md(string $raw): array
         if (preg_match('/^##\s+Enrichment:\s*(\S+)\s*$/i', $line, $m)) {
             $flush();
             $section = 'enrichment:' . trim($m[1]);
+            continue;
+        }
+        if (preg_match('/^##\s+Idea:\s*(\S+)\s*$/i', $line, $m)) {
+            $flush();
+            $section = 'idea:' . trim($m[1]);
+            continue;
+        }
+        if (preg_match('/^##\s+Line:\s*(\S+)\s*$/i', $line, $m)) {
+            $flush();
+            $section = 'line:' . trim($m[1]);
             continue;
         }
         if (preg_match('/^#\s+/', $line) && $section === null) {
@@ -1756,7 +1829,7 @@ function parse_phase1_suggestions_md(string $raw): array
 }
 
 /**
- * @param array{shorthands: array<string, string>, enrichments: array<string, string>} $data
+ * @param array{shorthands: array<string, string>, enrichments: array<string, string>, ideas?: array<string, string>, lines?: array<string, string>} $data
  */
 function format_phase1_suggestions_md(array $data): string
 {
@@ -1777,12 +1850,31 @@ function format_phase1_suggestions_md(array $data): string
         $parts[] = '';
     }
 
+    foreach ($data['ideas'] as $id => $text) {
+        $parts[] = '## Idea: ' . $id;
+        $parts[] = '';
+        $parts[] = $text;
+        $parts[] = '';
+    }
+
+    foreach ($data['lines'] as $id => $text) {
+        $parts[] = '## Line: ' . $id;
+        $parts[] = '';
+        $parts[] = $text;
+        $parts[] = '';
+    }
+
     $md = rtrim(implode("\n", $parts));
     return $md === '# Phase 1 suggestions' ? "# Phase 1 suggestions\n" : $md . "\n";
 }
 
 /**
- * @return array{shorthands: array<string, string>, enrichments: array<string, string>}
+ * @return array{
+ *   shorthands: array<string, string>,
+ *   enrichments: array<string, string>,
+ *   ideas: array<string, string>,
+ *   lines: array<string, string>
+ * }
  */
 function load_phase1_suggestions(string $dir): array
 {
@@ -1806,7 +1898,12 @@ function save_phase1_suggestions(string $dir, array $data): bool
     $md = format_phase1_suggestions_md($normalized);
     $path = phase1_suggestions_path($dir);
 
-    if ($normalized['shorthands'] === [] && $normalized['enrichments'] === []) {
+    if (
+        $normalized['shorthands'] === []
+        && $normalized['enrichments'] === []
+        && $normalized['ideas'] === []
+        && $normalized['lines'] === []
+    ) {
         if (is_file($path)) {
             return unlink($path);
         }

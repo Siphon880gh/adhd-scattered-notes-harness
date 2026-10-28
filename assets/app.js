@@ -3525,25 +3525,34 @@
     if (!root) return;
 
     var phase1SuggestTimer = null;
-    var phase1SuggestState = { shorthands: {}, enrichments: {} };
+    var phase1SuggestState = { shorthands: {}, enrichments: {}, ideas: {}, lines: {} };
+    var noteSuggestAnchor = null;
+
+    function copySuggestMap(source, accept) {
+      var out = {};
+      if (!source || typeof source !== "object") return out;
+      Object.keys(source).forEach(function (id) {
+        var text = String(source[id] || "").trim();
+        if (!id || !text) return;
+        if (accept && !accept(id)) return;
+        out[id] = text;
+      });
+      return out;
+    }
 
     function normalizePhase1SuggestState(data) {
-      var next = { shorthands: {}, enrichments: {} };
+      var next = { shorthands: {}, enrichments: {}, ideas: {}, lines: {} };
       if (!data || typeof data !== "object") return next;
-      if (data.shorthands && typeof data.shorthands === "object") {
-        Object.keys(data.shorthands).forEach(function (token) {
-          var text = String(data.shorthands[token] || "").trim();
-          if (!token || !text) return;
-          next.shorthands[token] = text;
-        });
-      }
-      if (data.enrichments && typeof data.enrichments === "object") {
-        Object.keys(data.enrichments).forEach(function (id) {
-          var text = String(data.enrichments[id] || "").trim();
-          if (!id || !text) return;
-          next.enrichments[id] = text;
-        });
-      }
+      next.shorthands = copySuggestMap(data.shorthands);
+      next.enrichments = copySuggestMap(data.enrichments, function (id) {
+        return /^.+:\d+$/.test(id);
+      });
+      next.ideas = copySuggestMap(data.ideas, function (id) {
+        return /^.+:\d+-\d+$/.test(id);
+      });
+      next.lines = copySuggestMap(data.lines, function (id) {
+        return /^.+:\d+$/.test(id);
+      });
       return next;
     }
 
@@ -3661,6 +3670,129 @@
       phase1History.noteSuggest("Suggest · line " + lineNo);
     }
 
+    function suggestionText(bucket, key) {
+      if (!bucket || !key) return "";
+      return String(bucket[key] || "");
+    }
+
+    function syncNoteSuggestMarks() {
+      qsa("section.thought", root).forEach(function (section) {
+        var key = section.getAttribute("data-idea-key") || "";
+        section.classList.toggle(
+          "has-idea-suggestion",
+          suggestionText(phase1SuggestState.ideas, key).trim() !== ""
+        );
+      });
+      qsa("[data-line-suggest]", root).forEach(function (line) {
+        var key = line.getAttribute("data-line-key") || "";
+        line.classList.toggle(
+          "has-line-suggestion",
+          suggestionText(phase1SuggestState.lines, key).trim() !== ""
+        );
+      });
+    }
+
+    function setIdeaSuggestion(id, text) {
+      if (!id) return;
+      var trimmed = String(text || "").trim();
+      if (trimmed) phase1SuggestState.ideas[id] = trimmed;
+      else delete phase1SuggestState.ideas[id];
+      syncNoteSuggestMarks();
+      schedulePhase1SuggestSave();
+      phase1History.noteSuggest("Suggest · idea " + id.split(":").slice(1).join(":"));
+    }
+
+    function setLineSuggestion(id, text) {
+      if (!id) return;
+      var trimmed = String(text || "").trim();
+      if (trimmed) phase1SuggestState.lines[id] = trimmed;
+      else delete phase1SuggestState.lines[id];
+      syncNoteSuggestMarks();
+      schedulePhase1SuggestSave();
+      phase1History.noteSuggest("Suggest · line " + String(id).split(":").pop());
+    }
+
+    function ensureNoteSuggest() {
+      var panel = qs("[data-phase1-note-suggest]");
+      if (panel) return panel;
+      panel = document.createElement("div");
+      panel.className = "phase1-note-suggest";
+      panel.setAttribute("data-phase1-note-suggest", "");
+      panel.setAttribute("data-phase1-suggest", "");
+      panel.setAttribute("data-phase1-suggest-panel", "");
+      panel.setAttribute("role", "dialog");
+      panel.hidden = true;
+      var caption = document.createElement("label");
+      caption.className = "phase1-suggest__caption";
+      caption.setAttribute("data-phase1-note-caption", "");
+      caption.setAttribute("for", "phase1-note-suggest-input");
+      var input = document.createElement("textarea");
+      input.className = "phase1-suggest__input";
+      input.id = "phase1-note-suggest-input";
+      input.setAttribute("data-phase1-suggest-input", "");
+      input.rows = 4;
+      input.maxLength = 4000;
+      panel.appendChild(caption);
+      panel.appendChild(input);
+      input.addEventListener("input", function () {
+        var kind = input.getAttribute("data-phase1-suggest-kind") || "";
+        var key = input.getAttribute("data-phase1-suggest-key") || "";
+        if (kind === "idea") setIdeaSuggestion(key, input.value);
+        else if (kind === "line") setLineSuggestion(key, input.value);
+      });
+      document.body.appendChild(panel);
+      return panel;
+    }
+
+    function placeNoteSuggest(panel, anchor) {
+      var rect = anchor.getBoundingClientRect();
+      var width = panel.offsetWidth;
+      var height = panel.offsetHeight;
+      var onEdge = anchor.hasAttribute("data-idea-suggest");
+      var left = onEdge ? rect.right + 8 : rect.left;
+      var top = onEdge ? rect.top : rect.bottom + 6;
+      if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
+      if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+      if (left < 8) left = 8;
+      if (top < 8) top = 8;
+      panel.style.left = left + "px";
+      panel.style.top = top + "px";
+    }
+
+    function openNoteSuggest(kind, key, anchor) {
+      if (isPhasePreview || !key || !anchor) return;
+      var panel = ensureNoteSuggest();
+      var input = qs("[data-phase1-suggest-input]", panel);
+      var caption = qs("[data-phase1-note-caption]", panel);
+      var same =
+        !panel.hidden &&
+        input.getAttribute("data-phase1-suggest-kind") === kind &&
+        input.getAttribute("data-phase1-suggest-key") === key;
+      closePhase1SuggestPanels();
+      if (same) {
+        noteSuggestAnchor = null;
+        return;
+      }
+      var bucket = kind === "idea" ? phase1SuggestState.ideas : phase1SuggestState.lines;
+      var range = String(key).split(":").slice(1).join(":");
+      input.setAttribute("data-phase1-suggest-kind", kind);
+      input.setAttribute("data-phase1-suggest-key", key);
+      input.value = suggestionText(bucket, key);
+      if (kind === "idea") {
+        caption.textContent = "Suggestion for this whole idea (" + range.replace("-", "–") + "). Saved for the next phase.";
+        input.placeholder = "e.g. this is one article — keep the steps together";
+        panel.setAttribute("aria-label", "Suggestion for this whole idea");
+      } else {
+        caption.textContent = "Suggestion for this line’s text (line " + range + "). Saved for the next phase.";
+        input.placeholder = "e.g. this line is a task; keep the exact wording";
+        panel.setAttribute("aria-label", "Suggestion for this line");
+      }
+      panel.hidden = false;
+      noteSuggestAnchor = anchor;
+      placeNoteSuggest(panel, anchor);
+      input.focus();
+    }
+
     function closePhase1SuggestPanels(except) {
       qsa("[data-phase1-suggest-panel]", root).forEach(function (panel) {
         if (except && panel === except) return;
@@ -3669,6 +3801,11 @@
         var toggle = wrap ? qs("[data-phase1-suggest-toggle]", wrap) : null;
         if (toggle) toggle.setAttribute("aria-expanded", "false");
       });
+      var notePanel = qs("[data-phase1-note-suggest]");
+      if (notePanel && notePanel !== except) {
+        notePanel.hidden = true;
+        noteSuggestAnchor = null;
+      }
     }
 
     function syncBlockUi(block, hasPaste) {
@@ -3740,6 +3877,30 @@
 
     root.addEventListener("click", function (e) {
       if (handlePhase1RegionClick(e)) return;
+      if (document.body.classList.contains("is-resizing-thought")) return;
+      if (qs(".thought-resize-choice") && !qs(".thought-resize-choice").hidden) return;
+
+      var ideaEdge = e.target.closest("[data-idea-suggest]");
+      if (ideaEdge && root.contains(ideaEdge)) {
+        e.preventDefault();
+        e.stopPropagation();
+        var ideaSection = ideaEdge.closest("section.thought");
+        openNoteSuggest("idea", ideaSection ? ideaSection.getAttribute("data-idea-key") || "" : "", ideaEdge);
+        return;
+      }
+
+      var sourceLine = e.target.closest("[data-line-suggest]");
+      if (
+        sourceLine &&
+        root.contains(sourceLine) &&
+        !e.target.closest("a[href], button, textarea, input, [data-phase1-suggest], .url-block")
+      ) {
+        var selected = window.getSelection ? String(window.getSelection()) : "";
+        if (selected.trim() && sourceLine.contains(window.getSelection().anchorNode)) return;
+        e.stopPropagation();
+        openNoteSuggest("line", sourceLine.getAttribute("data-line-key") || "", sourceLine);
+        return;
+      }
 
       var suggestToggle = e.target.closest("[data-phase1-suggest-toggle]");
       if (suggestToggle && root.contains(suggestToggle)) {
@@ -3775,7 +3936,36 @@
         setShorthandSuggestion(key, input.value);
       } else if (kind === "enrichment") {
         setEnrichmentSuggestion(key, input.value);
+      } else if (kind === "idea") {
+        setIdeaSuggestion(key, input.value);
+      } else if (kind === "line") {
+        setLineSuggestion(key, input.value);
       }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      var panel = qs("[data-phase1-note-suggest]");
+      if (!panel || panel.hidden) return;
+      panel.hidden = true;
+      noteSuggestAnchor = null;
+    });
+
+    window.addEventListener(
+      "scroll",
+      function () {
+        var panel = qs("[data-phase1-note-suggest]");
+        if (!panel || panel.hidden || !noteSuggestAnchor || !noteSuggestAnchor.isConnected) return;
+        placeNoteSuggest(panel, noteSuggestAnchor);
+      },
+      true
+    );
+
+    document.addEventListener("phase1-regions-changed", function () {
+      var panel = qs("[data-phase1-note-suggest]");
+      if (panel) panel.hidden = true;
+      noteSuggestAnchor = null;
+      syncNoteSuggestMarks();
     });
 
     document.addEventListener("click", function (e) {
@@ -3806,15 +3996,19 @@
 
       function cloneSuggestions(state) {
         var source = state || phase1SuggestState;
-        var shorthands = {};
-        var enrichments = {};
-        Object.keys(source.shorthands || {}).sort().forEach(function (key) {
-          shorthands[key] = source.shorthands[key];
-        });
-        Object.keys(source.enrichments || {}).sort().forEach(function (key) {
-          enrichments[key] = source.enrichments[key];
-        });
-        return { shorthands: shorthands, enrichments: enrichments };
+        function copy(bucket) {
+          var out = {};
+          Object.keys(bucket || {}).sort().forEach(function (key) {
+            out[key] = bucket[key];
+          });
+          return out;
+        }
+        return {
+          shorthands: copy(source.shorthands),
+          enrichments: copy(source.enrichments),
+          ideas: copy(source.ideas),
+          lines: copy(source.lines),
+        };
       }
 
       function readRegions() {
@@ -3903,13 +4097,18 @@
           if (kind === "shorthand") {
             var stored = findShorthandTokenKey(key);
             text = phase1SuggestState.shorthands[stored] || "";
+          } else if (kind === "idea") {
+            text = phase1SuggestState.ideas[key] || "";
+          } else if (kind === "line") {
+            text = phase1SuggestState.lines[key] || "";
           } else {
             text = phase1SuggestState.enrichments[key] || "";
           }
           input.value = text;
           if (kind === "shorthand") syncShorthandUi(key, text);
-          else syncEnrichmentUi(key, text);
+          else if (kind === "enrichment") syncEnrichmentUi(key, text);
         });
+        syncNoteSuggestMarks();
         var byLine = {};
         qsa(".thought-row", doc).forEach(function (row) {
           byLine[row.getAttribute("data-source-line") || ""] = row;
@@ -4103,10 +4302,21 @@
     return qsa("section.thought", doc || document);
   }
 
+  function phase1IdeaEdge() {
+    var edge = document.createElement("button");
+    edge.type = "button";
+    edge.className = "thought__edge";
+    edge.setAttribute("data-idea-suggest", "");
+    edge.setAttribute("aria-label", "Suggestion for this whole idea");
+    edge.title = "Suggestion for this whole idea";
+    return edge;
+  }
+
   function phase1NewThought() {
     var section = document.createElement("section");
     section.className = "thought";
     section.setAttribute("data-thought", "0");
+    section.appendChild(phase1IdeaEdge());
     section.appendChild(phase1ThoughtHeader());
     return section;
   }
@@ -4146,6 +4356,14 @@
       var rows = qsa(".thought-row", section);
       var start = rows.length ? rows[0].getAttribute("data-source-line") || "" : "";
       var end = rows.length ? rows[rows.length - 1].getAttribute("data-source-line") || "" : "";
+      var file = doc.getAttribute("data-phase1-file") || "";
+      section.setAttribute("data-idea-key", start && end ? file + ":" + start + "-" + end : "");
+      if (!qs("[data-idea-suggest]", section)) {
+        var header = qs(".thought__head", section);
+        var edge = phase1IdeaEdge();
+        if (header) section.insertBefore(edge, header);
+        else section.insertBefore(edge, section.firstChild);
+      }
       var indexEl = qs(".thought__index", section);
       if (indexEl) indexEl.textContent = "Note " + id;
       var rangeEl = qs(".thought__range", section);
@@ -5214,6 +5432,8 @@
       "[data-thought-split-at]",
       "[data-thought-merge]",
       "[data-thought-resize]",
+      "[data-idea-suggest]",
+      "[data-line-suggest]",
       "[data-phase1-suggest]",
       "[data-url-note]",
       "[data-url-paste]",

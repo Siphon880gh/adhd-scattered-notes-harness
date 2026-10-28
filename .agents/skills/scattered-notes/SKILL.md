@@ -38,7 +38,7 @@ Per batch folder `inputs/{folder}/`:
 |------|------|
 | `*.md`, `*.txt` | Raw scattered notes (includes `*.url.txt` — URL capture files) |
 | `phase1.json` | Uncertain marks + YouTube + link enrichments (incl. blocked URLs awaiting user paste) |
-| `phase1-suggestions.md` | User feedback for Phase 1 — shared shorthand notes + per-enrichment notes; **read before rewriting Phase 1 / advancing** |
+| `phase1-suggestions.md` | User feedback for Phase 1 — shared shorthand notes, per-enrichment notes, whole-idea notes (colored edge), and per-line notes; **read before rewriting Phase 1 / advancing** |
 | `phase1-regions.md` | User corrections to note boundaries (split / merge). **Read before Phase 2 grouping.** Do not treat it as a note. |
 | `phase2.json` | Organized notes + per-line blame map + item tags + `filterLayout` |
 | `phase2-suggestions.md` | User feedback for Phase 2 — per-item and/or whole-section panels (Scattered / Reference / Articles); **read before writing/revising Phase 2** |
@@ -150,10 +150,20 @@ means write the function
 ## Enrichment: a.url.txt:1
 
 about should focus on bubble vs merge complexity, not a generic overview
+
+## Idea: braindump.md:12-40
+
+This whole region is one article. Keep the steps in order and don’t turn each line into its own task.
+
+## Line: braindump.md:15
+
+This line is the task. Keep the exact command.
 ```
 
 - `## Shorthand: {token}` — one note for that shorthand **type**. The app shows the **same** comment on every uncertain flag with that token (case-insensitive). Applying it once is enough for all occurrences — update root `shorthands.md`, then clear those uncertain marks on rewrite.
 - `## Enrichment: {file}:{line}` — feedback on a YouTube / fetched-link green added line (`file` is the note filename, `line` is 1-based). Revise that line’s `youtube` or `link` title/about accordingly.
+- `## Idea: {file}:{start}-{end}` — feedback on that **whole idea** (the colored region covering those 1-based source lines, inclusive). The user writes it by clicking the colored edge. Apply it when you group notes for Phase 2: wording, whether it stays one idea, and whether it is a task, reference, or article. Do not ignore it because the region was also split or merged; the line range is the idea they meant.
+- `## Line: {file}:{line}` — feedback on **that source line’s text** only. The user writes it by clicking the line. Apply it to how that line is worded and classified when you organize Phase 2. It is not a comment on the rest of the idea.
 - Omit empty sections. The app POSTs to `index.php?action=save-phase1-suggestions`. Do not wipe this file when rewriting `phase1.json` unless the user asked to clear suggestions.
 
 ### `phase1-regions.md`
@@ -466,11 +476,12 @@ WTF is the difference between EXPOSE and publishing -p again
 9. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks / green added descriptors / **blocked-URL paste panels** / **in-app Suggest** / **numbered note regions and the map**, and **return to this chat** to:
    - explain any flagged shorthand/symbols (chat **or** read `phase1-suggestions.md` shorthand sections — one note covers every flag of that token), or
    - apply enrichment Suggest notes from `phase1-suggestions.md`, or
+   - apply whole-idea notes (`## Idea:`) and per-line notes (`## Line:`) from `phase1-suggestions.md` — the colored edge is the whole idea, a clicked line is that line’s text — or
    - say they pasted blocked-URL text (re-read `phase1.json` and enrich from `userPaste`), or
    - say a region is wrong — they fix that in the app with **Split** or **Merge up** / **Merge down** (saved to `phase1-regions.md`; colors update automatically and neighboring notes never share a color). Read that file before you group notes again, or
    - say Phase 1 looks good and advance to Phase 2.
 
-**Before rewriting Phase 1 artifacts:** always read `phase1-suggestions.md` if present. For each `## Shorthand:` note, update root `shorthands.md` and remove matching uncertain marks. For each `## Enrichment:` note, revise that line’s `youtube` / `link` fields. Do not wipe `phase1-suggestions.md` unless the user cleared Suggest in the app.
+**Before rewriting Phase 1 artifacts, and again before Phase 2:** always read `phase1-suggestions.md` if present. For each `## Shorthand:` note, update root `shorthands.md` and remove matching uncertain marks. For each `## Enrichment:` note, revise that line’s `youtube` / `link` fields. For each `## Idea:` note, treat that source range as the user described when you group and word the next phase. For each `## Line:` note, apply that comment to that source line’s text only. Do not wipe `phase1-suggestions.md` unless the user cleared Suggest in the app.
 
 Phase 1 may loop: user explains (chat or Suggest) → update root `shorthands.md` / enrichments → rewrite `phase1.json`; or user pastes blocked URL text in the app → re-read pastes → rewrite link enrichments → user refreshes the app.
 
@@ -481,12 +492,13 @@ Only after the user confirms Phase 1 is done:
 1. Set `app.config.json` `"phase": 2`.
 2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: tasks|reference|articleCandidates` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`**, and applying whole-section guidance (tagging / heading style / ordering) as needed.
 3. Read `phase1-regions.md` if it exists. A listed split starts a new note at that line; a listed join keeps that line with the previous note. Judge every divider (`--` / `---` / `------`, `<hr>`, `**`, or two or more blank lines) as a new idea or as a section of the same article, and write joins for the sections. One blank line is paragraph space when any divider exists. Do not wipe `phase1-regions.md`.
-4. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
-5. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
-6. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
-7. Account for every line in `blame` — fidelity first; do not silently drop details.
-8. Tag every organized item (`tasks`, `reference`, `articleCandidates`) and **always write `filterLayout`**, using the tagging and `filterLayout` rules below. Related notes share tags. On a rewrite, keep every tag currently on the item and add any AI tag that is not already there (dedupe case-insensitively). Do not leave an item untagged, and do not delete a tag that is still on the item. Do **not** delete `phase2-suggestions.md` or `phase1-regions.md`.
-9. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, detail, or tag is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** and retag accordingly. Also remind them they can:
+4. Read `phase1-suggestions.md` if it exists. Apply every `## Idea:` note to that whole source range and every `## Line:` note to that source line’s text while you group and word the cards. Do not wipe `phase1-suggestions.md`.
+5. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**.
+6. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
+7. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
+8. Account for every line in `blame` — fidelity first; do not silently drop details.
+9. Tag every organized item (`tasks`, `reference`, `articleCandidates`) and **always write `filterLayout`**, using the tagging and `filterLayout` rules below. Related notes share tags. On a rewrite, keep every tag currently on the item and add any AI tag that is not already there (dedupe case-insensitively). Do not leave an item untagged, and do not delete a tag that is still on the item. Do **not** delete `phase2-suggestions.md`, `phase1-suggestions.md`, or `phase1-regions.md`.
+10. Tell the user to **visit the web app** (`index.php`), refresh, and review whether the AI parsed their notes correctly: that it did **not** drop lines unnecessarily, and that each card reads the way they meant. **Actively invite Suggest notes for changing a note** — if a heading, body, bucket, merge, detail, or tag is wrong, they should open **Suggest** on that card (or a section header Suggest for whole-section feedback: tagging, heading style, ordering) and write what to change; those notes save to `phase2-suggestions.md` for the next AI pass, and the AI may rewrite the **heading and/or body** and retag accordingly. Also remind them they can:
    - **green-check** items as they review;
    - see the tags already on each card and in the **Filter** bar, and add, remove, or rename them if one is wrong;
    - **move items** between Scattered / Reference / Articles (and rearrange within a panel);
@@ -537,8 +549,8 @@ Tags are already on the cards from Phase 2. Phase 3 does not wait to invent them
 8. Phase 1 artifacts must be visible in the app after refresh.
 9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure: prefer blocked `link` panel (or `YouTube (lookup failed)` fallback).
 10. Every non-YouTube URL and every `*.url.txt`: try fetch; set `link` with intent from surrounding text; on failure `blocked: true` and wait for app paste (`userPaste`/`userNote`). Preserve pastes across rewrites. After paste: derive `title`/`about`, set `added: true`.
-11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits and joins. Judge each divider yourself (`--`, `---`, `------`, `<hr>`, a line of asterisks, or two or more blank lines in a row): a new idea stays split; a section of the same idea or article is joined. One blank line is paragraph space when any divider exists. Dash length does not decide. Single blank lines are the candidates only when the file has no divider. Neighboring notes never share a color. Do not wipe `phase1-regions.md`.
-12. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file.
+11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; keep `## Idea:` and `## Line:` notes for the next phase; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits and joins. Judge each divider yourself (`--`, `---`, `------`, `<hr>`, a line of asterisks, or two or more blank lines in a row): a new idea stays split; a section of the same idea or article is joined. One blank line is paragraph space when any divider exists. Dash length does not decide. Single blank lines are the candidates only when the file has no divider. Neighboring notes never share a color. Do not wipe `phase1-regions.md`.
+12. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file. Also read `phase1-suggestions.md` and apply every `## Idea:` note to that whole source range and every `## Line:` note to that source line’s text. Do not wipe `phase1-suggestions.md`.
 13. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`. Link items reuse Phase 1 `link.title` / `link.about` when added.
 14. Phase 2: every line in every note file appears in `blame`. Every organized item has area tags, and `filterLayout` groups those tags for the Filter bar. Preserve tags the user already edited in the app.
 15. Do not advance to Phase 2 without explicit user confirmation.

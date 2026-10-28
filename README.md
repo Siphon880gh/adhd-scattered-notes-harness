@@ -60,7 +60,7 @@ inputs/
     note-one.md
     random-thought.txt
     phase1.json              # uncertain marks + YouTube descriptors
-    phase1-suggestions.md    # optional: shorthand and enrichment Suggest notes
+    phase1-suggestions.md    # optional: shorthand, enrichment, whole-idea, and per-line Suggest notes
     phase1-regions.md        # optional: your Split / Merge corrections to note boundaries
     phase2.json              # organized notes + blame map + tags (Phase 2/3)
     phase2-suggestions.md    # optional: your Suggest notes for the next Phase 2 pass
@@ -149,7 +149,7 @@ Anyone who captures thoughts in bursts and organizes later—or never quite gets
 
 ### Phase 1 — distinct ideas, and a map of the whole file
 
-Open a batch in the app and each note is its own colored region, numbered with the source line range. Here `inputs/sort-scattered` is 54 notes, drawn from divider lines such as `---`. The skill then decides which of those are a new idea and which are a section of the same article. The counts along the top — Files, Uncertain, YouTube, Links, Blocked — open a list; click a row and the page jumps to that line. The strip on the right is the whole file, one band per note, so a long dump stays visible at once. **Suggest** sits on a shorthand flag and on a green YouTube or link line.
+Open a batch in the app and each note is its own colored region, numbered with the source line range. Here `inputs/sort-scattered` is 54 notes, drawn from divider lines such as `---`. The skill then decides which of those are a new idea and which are a section of the same article. The counts along the top — Files, Uncertain, YouTube, Links, Blocked — open a list; click a row and the page jumps to that line. The strip on the right is the whole file, one band per note, so a long dump stays visible at once. Click the colored edge to suggest a change for that whole idea, or click a line to suggest a change for that line’s text; both are saved for the next phase. **Suggest** also sits on a shorthand flag and on a green YouTube or link line.
 
 If the boundary is wrong, **Split** a region that is really two ideas, or **Merge up** / **Merge down** when two regions are the same idea. Colors are reassigned so two notes in a row never share one. **Projects** in the header switches to another folder and restores that project’s phase. Snapshots, saved from Phase 3, stay available from either project.
 
