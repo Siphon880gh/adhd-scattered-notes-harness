@@ -45,7 +45,7 @@ function list_input_projects(): array
 
     $names = [];
     foreach (scandir($root) ?: [] as $name) {
-        if ($name === '.' || $name === '..' || str_starts_with($name, '.')) {
+        if ($name === '.' || $name === '..' || (isset($name[0]) && $name[0] === '.')) {
             continue;
         }
         if (is_dir($root . '/' . $name)) {
