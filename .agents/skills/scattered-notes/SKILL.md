@@ -8,7 +8,8 @@ description: >-
   (including .url.txt link captures), run the scattered-notes harness, update
   shorthands, enrich YouTube/web links (or collect browser pastes for blocked
   URLs), redraw Phase 1 note regions (split / merge; read phase1-regions.md),
-  or advance phase1/phase2/phase3 artifacts for index.php.
+  or advance phase1/phase2/phase3 artifacts for index.php. If the
+  inputs/ project is not clear, ask which folder before doing the work.
 ---
 
 # Scattered Notes Harness
@@ -23,7 +24,7 @@ This is primarily used under Cursor or Claude Code but we open the php file as a
 
 - User has scattered notes in `inputs/{folder}/` (`.md` / `.txt`)
 - User asks to process, organize, clarify, or continue a scattered-notes batch
-- User says **“start phase 1”**, **“start phase 2”**, **“start phase 3”**, or **“let’s continue”** (any phase — treat as resume/advance for the active batch)
+- User says **“start phase 1”**, **“start phase 2”**, **“start phase 3”**, or **“let’s continue”** (any phase — resume or advance the batch once the project is known; if it is not, ask which `inputs/` folder first, then do what they asked)
 - User explains shorthand / symbols after reviewing Phase 1 in the app
 - User redraws Phase 1 note regions in the app (split one note, or merge two) and later asks about those boundaries
 - User confirms Phase 1 is done and wants Phase 2
@@ -312,9 +313,37 @@ When the user explains a symbol or shorthand in chat, update this root file, the
 
 ## Strict workflow
 
+### Which project — ask when it is not clear
+
+Each folder under `inputs/` is one project. On **every user message** about this harness, decide whether you know which folder the work is for **before** you read that folder’s notes, write artifacts, advance a phase, or apply a shorthand / suggestion / tag change.
+
+Read `app.config.json` and list directories under `inputs/` (ignore files such as `.gitkeep`) before you decide.
+
+**The project is known** only when one of these is true:
+
+- This message names one existing folder (`sort-scattered`, `inputs/sample`, “use sample”).
+- This same chat already confirmed a folder, you just re-read `app.config.json`, and `inputFolder` is still that folder. If the file no longer matches, they switched projects in the browser and you do not know.
+- `inputFolder` is set, that directory exists, and it is the only directory under `inputs/`.
+
+**Ask which project, then stop,** when you do not necessarily know. That includes:
+
+- `inputFolder` is empty, or it is not a directory under `inputs/`.
+- More than one directory exists under `inputs/`, this message does not name one, and this chat has not already confirmed the folder that `inputFolder` still points at. A value left in `app.config.json` at the start of a chat is not enough.
+- Their words fit a different folder than `inputFolder` (a name, a topic, or notes that match another batch).
+
+Do not guess from the only non-sample folder, from another chat, or from whichever folder looks mid-session.
+
+**How to ask:** One short question. List every directory under `inputs/`, with the phase saved in `projects` (or “no phase yet”). If `inputFolder` is set and that folder exists, say the app currently has that one open. Wait. Do not start a phase, reset sample, or write files in that same turn.
+
+Remember what they already asked (start a phase, continue, explain a shorthand, apply suggestions). After they name a folder, do that — do not make them repeat it. Set `inputFolder` to their answer, keep `projects`, and use that folder’s saved phase unless they asked to advance, reset, or start a specific phase.
+
+If the name is not a directory under `inputs/`, say so and ask again. Create `inputs/{name}/` only after they say they want a new batch.
+
+When the project is known, say which folder and phase in one short line, then continue.
+
 ### 0. Session check, then offer options
 
-On **every start** (first run, re-run, or restart): **read `app.config.json` first**, list directories under `inputs/` (ignore files like `.gitkeep`), and detect session state before offering options.
+On **every start** (first run, re-run, or restart), run **Which project** first. Only after the project is known: detect session state before offering options. If you asked which project, do not also run this menu in that same turn.
 
 #### Detect session state
 
@@ -539,7 +568,7 @@ Tags are already on the cards from Phase 2. Phase 3 does not wait to invent them
 
 ## Agent checklist
 
-1. On every start: read `app.config.json`, list `inputs/` folders, detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3), announce state, then offer the matching option set from §0.
+1. On every user message: read `app.config.json` and list `inputs/` folders. If you do not necessarily know which project (**Which project**), ask which folder and stop. When you know, announce folder + phase. On a start, then detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3) and offer the matching option set from §0.
 2. Mid-session: offer **Continue** first (phase 2 wording: review parse fidelity — nothing dropped; invite **Suggest** for notes that should change); Final: offer **Continue (phase 3, locked)** first — filter/copy exit — and remind **“Revert to Phase 2”** then refresh unlocks Suggest again. Do not wipe an in-progress or finished batch unless they choose a reset/switch.
 3. If reset sample + select: delete `inputs/sample/`, recreate note files only (six files including `0-preface.md`, `a.url.txt`, and `b.url.txt`; no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
 4. If “See the app with no folder selected”: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`; empty-state preview only — they still must pick a folder or select sample afterward; re-offer folders.
@@ -566,7 +595,7 @@ Tags are already on the cards from Phase 2. Phase 3 does not wait to invent them
 Across **all phases**, the user can drive the harness with short phrases:
 
 - **“start phase 1”** / **“start phase 2”** / **“start phase 3”** — begin or jump to that phase for the active folder (respect advance gates: don’t run Phase 2/3 until the prior phase is confirmed done, unless they explicitly insist).
-- **“let’s continue”** (or “continue”) — resume the current mid/final session at whatever phase `app.config.json` already has; same as choosing **Continue** in §0.
+- **“let’s continue”** (or “continue”) — once the project is known, resume that mid/final session at whatever phase `app.config.json` already has; same as choosing **Continue** in §0. If the project is not clear, ask which `inputs/` folder first, then continue that one.
 - **“Revert to Phase 2”** — from Phase 3 only: set `"phase": 2`, keep artifacts; user refreshes the app to unlock Suggest / green-check.
 
 After Phase 1 writes, also tell them they can say things like:
