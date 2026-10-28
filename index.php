@@ -533,13 +533,63 @@ function lines_for_file(string $dir, string $file, ?array $phase1): array
 }
 
 /**
- * @param list<array{label: string, count: int, key?: string}> $items
+ * @param list<array<string, mixed>> $items
  */
-function render_count_bar(array $items, string $ariaLabel): void
+function render_count_bar(array $items, string $ariaLabel, string $openGroup = ''): void
 {
-    echo '<div class="bucket-counts" data-bucket-counts aria-label="' . e($ariaLabel) . '">';
+    $grouped = isset($items[0]['items']) && is_array($items[0]['items']);
+    $rows = $grouped ? $items : [['label' => '', 'items' => $items]];
+    $class = 'bucket-counts' . ($grouped ? ' bucket-counts--switch' : '');
+    echo '<div class="' . $class . '" data-bucket-counts aria-label="' . e($ariaLabel) . '">';
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $rowLabel = (string) ($row['label'] ?? '');
+        $rowItems = is_array($row['items'] ?? null) ? $row['items'] : [];
+        $tone = (string) ($row['tone'] ?? '');
+        $groupId = (string) ($row['id'] ?? '');
+        if ($grouped && $groupId !== '') {
+            $open = $groupId === $openGroup;
+            $toneClass = $tone !== '' ? ' bucket-counts__group--' . preg_replace('/[^a-z0-9_-]/', '', $tone) : '';
+            $groupTotal = 0;
+            foreach ($rowItems as $rowItem) {
+                if (is_array($rowItem)) {
+                    $groupTotal += (int) ($rowItem['count'] ?? 0);
+                }
+            }
+            $openClass = $open ? ' is-open is-settled' : '';
+            echo '<div class="bucket-counts__group' . $toneClass . $openClass . '" data-count-group="' . e($groupId) . '">';
+            echo '<button type="button" class="bucket-counts__group-toggle" data-count-group-toggle aria-expanded="' . ($open ? 'true' : 'false') . '">';
+            if ($tone === 'attention') {
+                echo '<svg class="bucket-counts__warn" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>';
+            }
+            echo '<span>' . e($rowLabel) . '</span>';
+            if ($tone === 'attention') {
+                echo '<span class="bucket-counts__group-count">(' . $groupTotal . ')</span>';
+            }
+            echo '<svg class="bucket-counts__chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            echo '</button>';
+            echo '<div class="bucket-counts__group-items"' . ($open ? '' : ' aria-hidden="true"') . '>';
+            render_count_bar_items($rowItems);
+            echo '</div></div>';
+            continue;
+        }
+        render_count_bar_items($rowItems);
+    }
+    echo '</div>';
+}
+
+/**
+ * @param list<array<string, mixed>> $items
+ */
+function render_count_bar_items(array $items): void
+{
     $first = true;
     foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
         if (!$first) {
             echo '<span class="bucket-counts__divider" aria-hidden="true"></span>';
         }
@@ -581,7 +631,6 @@ function render_count_bar(array $items, string $ariaLabel): void
             echo '</span>';
         }
     }
-    echo '</div>';
 }
 
 /**
@@ -733,15 +782,35 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php endif; ?>
     </div>
     <div class="app-header__actions">
+        <?php if (!$showEmpty && (int) $phase === 1): ?>
+            <div class="app-header__cluster" data-phase1-history>
+                <div class="app-header__segment" role="group" aria-label="Undo and redo">
+                    <button type="button" class="app-header__segment-btn" data-history-undo disabled title="Undo (⌘Z)">Undo</button>
+                    <button type="button" class="app-header__segment-btn" data-history-redo disabled title="Redo (⇧⌘Z)">Redo</button>
+                </div>
+                <button type="button" class="app-header__btn app-header__btn--primary" data-history-save title="Save suggestions and note boundaries (⌘S)">Save</button>
+                <button type="button" class="app-header__btn app-header__btn--menu" data-history-toggle aria-expanded="false" aria-haspopup="true" title="Jump back to an earlier suggestion or note boundary">
+                    History
+                    <svg class="app-header__chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="app-header__history-panel" data-history-panel hidden>
+                    <div class="app-header__history-head">History</div>
+                    <ol class="app-header__history-list" data-history-list></ol>
+                </div>
+            </div>
+            <span class="app-header__sep" aria-hidden="true"></span>
+        <?php endif; ?>
         <?php $inputProjects = list_input_projects(); ?>
         <div class="app-header__projects" data-projects-menu data-current-project="<?= e($liveFolder) ?>">
             <button type="button"
-                    class="app-header__btn"
+                    class="app-header__btn app-header__btn--menu"
                     data-projects-toggle
                     aria-expanded="false"
                     aria-haspopup="true"
                     title="Switch the input folder this app is showing">
-                Projects<?= $inputProjects !== [] ? ' (' . count($inputProjects) . ')' : '' ?>
+                Projects
+                <?php if ($inputProjects !== []): ?><span class="app-header__count"><?= count($inputProjects) ?></span><?php endif; ?>
+                <svg class="app-header__chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="app-header__projects-panel" data-projects-panel hidden>
                 <div class="app-header__projects-head">Projects</div>
@@ -774,12 +843,14 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php endif; ?>
         <div class="app-header__snapshots" data-snapshots-menu>
             <button type="button"
-                    class="app-header__btn"
+                    class="app-header__btn app-header__btn--menu"
                     data-snapshots-toggle
                     aria-expanded="false"
                     aria-haspopup="true"
                     title="Open a saved snapshot">
-                Snapshots<?= $snapshotList !== [] ? ' (' . count($snapshotList) . ')' : '' ?>
+                Snapshots
+                <?php if ($snapshotList !== []): ?><span class="app-header__count"><?= count($snapshotList) ?></span><?php endif; ?>
+                <svg class="app-header__chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="app-header__snapshots-panel" data-snapshots-panel hidden>
                 <div class="app-header__snapshots-head">
@@ -919,13 +990,27 @@ $isSnapshotView = $viewingSnapshot !== null;
 <?php elseif ($phase === 1):
     $phase1Counts = phase1_review_counts($phase1, $noteFiles);
     $phase1Jumps = phase1_review_jumps($phase1, $noteFiles, $activeFile);
+    $attentionTotal = (int) $phase1Counts['uncertain'] + (int) $phase1Counts['blocked'];
     render_count_bar([
-        ['label' => 'Files', 'count' => $phase1Counts['files'], 'jumps' => $phase1Jumps['files']],
-        ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain'], 'jumps' => $phase1Jumps['uncertain']],
-        ['label' => 'YouTube', 'count' => $phase1Counts['youtube'], 'jumps' => $phase1Jumps['youtube']],
-        ['label' => 'Links', 'count' => $phase1Counts['links'], 'jumps' => $phase1Jumps['links'], 'alignEnd' => true],
-        ['label' => 'Blocked', 'count' => $phase1Counts['blocked'], 'jumps' => $phase1Jumps['blocked'], 'alignEnd' => true],
-    ], 'Phase 1 review counts');
+        [
+            'id' => 'links',
+            'label' => 'Links',
+            'items' => [
+                ['label' => 'Files', 'count' => $phase1Counts['files'], 'jumps' => $phase1Jumps['files']],
+                ['label' => 'YouTube', 'count' => $phase1Counts['youtube'], 'jumps' => $phase1Jumps['youtube']],
+                ['label' => 'Links', 'count' => $phase1Counts['links'], 'jumps' => $phase1Jumps['links']],
+            ],
+        ],
+        [
+            'id' => 'attention',
+            'label' => 'Need attention',
+            'tone' => 'attention',
+            'items' => [
+                ['label' => 'Uncertain', 'count' => $phase1Counts['uncertain'], 'jumps' => $phase1Jumps['uncertain']],
+                ['label' => 'Blocked', 'count' => $phase1Counts['blocked'], 'jumps' => $phase1Jumps['blocked']],
+            ],
+        ],
+    ], 'Phase 1 review counts', $attentionTotal > 0 ? 'attention' : 'links');
     ?>
     <aside class="banner banner--warn">
         <h2>Phase 1 — review marks, then return to chat</h2>
@@ -939,7 +1024,10 @@ $isSnapshotView = $viewingSnapshot !== null;
                 Distinct notes are numbered in the file. A line that is only <code>---</code> starts a new note
                 (a longer <code>------</code> fence keeps shorter dashes inside that note).
                 Files with no dash break are split on blank lines. The map on the right is the whole file.
-                If a boundary is wrong, use <strong>Split</strong> inside a note or <strong>Merge up</strong> / <strong>Merge down</strong> on the note header. Colors update on their own, and two notes in a row never share a color.
+                If a boundary is wrong, use <strong>Split</strong> inside a note or <strong>Merge up</strong> / <strong>Merge down</strong> on the note header.
+                Drag the top edge of a note, except the first one, or the bottom edge, except the last.
+                When you let go: if you dragged back into the note, choose to split those lines into a new idea or let the neighbor take them; if you dragged into the neighbor, take those lines into this note.
+                Colors update on their own, and two notes in a row never share a color.
             </li>
             <li>
                 For flagged shorthand: explain it in Cursor / Claude Code, <em>or</em> add an in-app <strong>Suggest</strong> note.
@@ -1119,12 +1207,15 @@ $isSnapshotView = $viewingSnapshot !== null;
                             }
                         }
                         $thoughtId = $indexToThought[$lineIndex] ?? 0;
+                        if ($thoughtId === 0) {
+                            continue;
+                        }
                         if ($thoughtId !== $thoughtOpen) {
                             if ($thoughtOpen !== 0) {
                                 echo '</section>';
                             }
                             $thoughtOpen = $thoughtId;
-                            if ($thoughtId !== 0 && isset($thoughtById[$thoughtId])) {
+                            if (isset($thoughtById[$thoughtId])) {
                                 $thought = $thoughtById[$thoughtId];
                                 $rangeLabel = (int) $thought['start'] === (int) $thought['end']
                                     ? 'line ' . (int) $thought['start']
@@ -1145,9 +1236,6 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 echo '</div>';
                                 echo '</header>';
                             }
-                        }
-                        if ($thoughtId === 0) {
-                            continue;
                         }
                         echo '<div class="thought-row" data-source-line="' . (int) $n . '">';
                         echo '<button type="button" class="thought-row__split" data-thought-split-at="' . (int) $n . '">Split into a new note here</button>';

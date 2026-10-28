@@ -7,6 +7,26 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(sel));
   }
 
+  function closeHeaderDisclosures(except) {
+    [
+      ["[data-history-panel]", "[data-history-toggle]"],
+      ["[data-projects-panel]", "[data-projects-toggle]"],
+      ["[data-snapshots-panel]", "[data-snapshots-toggle]"],
+    ].forEach(function (pair) {
+      var panel = qs(pair[0]);
+      var toggle = qs(pair[1]);
+      if (!panel || panel === except) return;
+      panel.hidden = true;
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      if (pair[0] !== "[data-snapshots-panel]") return;
+      panel.classList.remove("is-managing");
+      var manageBtn = qs("[data-snapshots-manage]");
+      var manageLabel = qs("[data-snapshots-manage-label]");
+      if (manageBtn) manageBtn.setAttribute("aria-pressed", "false");
+      if (manageLabel) manageLabel.textContent = "Manage";
+    });
+  }
+
   var openBtn = qs("[data-drawer-open]");
   var closeBtn = qs("[data-drawer-close]");
   var backdrop = qs("[data-drawer-backdrop]");
@@ -3265,6 +3285,30 @@
       });
     }
 
+    function placeCountPanel(menu) {
+      var panel = qs(".bucket-counts__panel", menu);
+      if (!panel) return;
+      requestAnimationFrame(function () {
+        if (getComputedStyle(panel).display === "none") return;
+        var margin = 12;
+        var alignEnd = menu.getAttribute("data-count-align") === "end";
+        panel.style.left = alignEnd ? "auto" : "0px";
+        panel.style.right = alignEnd ? "0px" : "auto";
+        var rect = panel.getBoundingClientRect();
+        var shift = 0;
+        if (rect.left < margin) shift = rect.left - margin;
+        else if (rect.right > window.innerWidth - margin) shift = rect.right - (window.innerWidth - margin);
+        if (!shift) return;
+        if (alignEnd) {
+          panel.style.right = shift + "px";
+          panel.style.left = "auto";
+        } else {
+          panel.style.left = (-shift) + "px";
+          panel.style.right = "auto";
+        }
+      });
+    }
+
     function scrollToJumpTarget(id) {
       var target = document.getElementById(id);
       if (!target) return false;
@@ -3279,7 +3323,60 @@
       return true;
     }
 
+    function countGroupWidth(group) {
+      var items = qs(".bucket-counts__group-items", group);
+      if (!items) return;
+      var probe = items.cloneNode(true);
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.maxWidth = "none";
+      probe.style.width = "max-content";
+      probe.style.opacity = "0";
+      document.body.appendChild(probe);
+      group.style.setProperty("--count-group-width", Math.ceil(probe.scrollWidth) + "px");
+      probe.remove();
+    }
+
+    qsa("[data-count-group]", bucketCountsBar).forEach(countGroupWidth);
+
     bucketCountsBar.addEventListener("click", function (e) {
+      var groupToggle = e.target.closest("[data-count-group-toggle]");
+      if (groupToggle && bucketCountsBar.contains(groupToggle)) {
+        var group = groupToggle.closest("[data-count-group]");
+        if (!group || group.classList.contains("is-open")) return;
+        var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        qsa("[data-count-group]", bucketCountsBar).forEach(countGroupWidth);
+        requestAnimationFrame(function () {
+        qsa("[data-count-group]", bucketCountsBar).forEach(function (other) {
+          var on = other === group;
+          var toggleBtn = qs("[data-count-group-toggle]", other);
+          if (toggleBtn) toggleBtn.setAttribute("aria-expanded", on ? "true" : "false");
+          var items = qs(".bucket-counts__group-items", other);
+          if (!on) {
+            other.classList.remove("is-settled");
+            other.classList.remove("is-open");
+            if (items) items.setAttribute("aria-hidden", "true");
+            return;
+          }
+          other.classList.add("is-open");
+          if (items) items.removeAttribute("aria-hidden");
+          function settle(ev) {
+            if (ev && ev.propertyName && ev.propertyName !== "max-width") return;
+            if (items) items.removeEventListener("transitionend", settle);
+            if (other.classList.contains("is-open")) other.classList.add("is-settled");
+          }
+          if (!items || reduceMotion) {
+            settle();
+            return;
+          }
+          items.addEventListener("transitionend", settle);
+          setTimeout(settle, 420);
+        });
+        closeCountMenus();
+        });
+        return;
+      }
+
       var toggle = e.target.closest("[data-count-menu-toggle]");
       if (toggle && bucketCountsBar.contains(toggle)) {
         var menu = toggle.closest("[data-count-menu]");
@@ -3288,6 +3385,7 @@
         if (menu && willOpen) {
           menu.classList.add("is-open");
           toggle.setAttribute("aria-expanded", "true");
+          placeCountPanel(menu);
         }
         return;
       }
@@ -3310,6 +3408,12 @@
       jumpToBucketSection(bucket);
     });
 
+    qsa("[data-count-menu]", bucketCountsBar).forEach(function (menu) {
+      menu.addEventListener("mouseenter", function () {
+        placeCountPanel(menu);
+      });
+    });
+
     document.addEventListener("click", function (e) {
       if (!e.target.closest("[data-count-menu]")) closeCountMenus();
     });
@@ -3317,6 +3421,15 @@
       if (e.key === "Escape") closeCountMenus();
     });
   }
+
+  var phase1ResizeCancel = function () {};
+  var phase1History = {
+    noteSuggest: function () {},
+    push: function () {},
+    undo: function () {},
+    redo: function () {},
+    save: function () {},
+  };
 
   // Phase 1 blocked-URL paste panels + Suggest notes
   (function initPhase1Panels() {
@@ -3406,13 +3519,19 @@
     }
 
     function savePhase1Suggestions() {
-      fetch("index.php?action=save-phase1-suggestions", {
+      return fetch("index.php?action=save-phase1-suggestions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(phase1SuggestState),
-      }).catch(function () {
-        // local save failure — UI state still updated
-      });
+      })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { ok: res.ok && data && data.ok };
+          });
+        })
+        .catch(function () {
+          return { ok: false };
+        });
     }
 
     function schedulePhase1SuggestSave() {
@@ -3435,6 +3554,7 @@
       }
       syncShorthandUi(key, String(text || ""));
       schedulePhase1SuggestSave();
+      phase1History.noteSuggest("Suggest · " + (storedKey || key));
     }
 
     function setEnrichmentSuggestion(id, text) {
@@ -3447,6 +3567,8 @@
       }
       syncEnrichmentUi(id, String(text || ""));
       schedulePhase1SuggestSave();
+      var lineNo = String(id).split(":").pop();
+      phase1History.noteSuggest("Suggest · line " + lineNo);
     }
 
     function closePhase1SuggestPanels(except) {
@@ -3573,6 +3695,262 @@
 
     initPhase1Minimap();
     initPhase1Regions();
+    initPhase1History();
+
+    function initPhase1History() {
+      var bar = qs("[data-phase1-history]");
+      var doc = qs("[data-phase1-lines]");
+      if (!bar || !doc) return;
+      var entries = [];
+      var index = -1;
+      var applying = false;
+      var burst = null;
+      var undoBtn = qs("[data-history-undo]", bar);
+      var redoBtn = qs("[data-history-redo]", bar);
+      var saveBtn = qs("[data-history-save]", bar);
+      var toggleBtn = qs("[data-history-toggle]", bar);
+      var panel = qs("[data-history-panel]", bar);
+      var list = qs("[data-history-list]", bar);
+      var saveLabel = saveBtn ? saveBtn.textContent : "Save";
+
+      function cloneSuggestions(state) {
+        var source = state || phase1SuggestState;
+        var shorthands = {};
+        var enrichments = {};
+        Object.keys(source.shorthands || {}).sort().forEach(function (key) {
+          shorthands[key] = source.shorthands[key];
+        });
+        Object.keys(source.enrichments || {}).sort().forEach(function (key) {
+          enrichments[key] = source.enrichments[key];
+        });
+        return { shorthands: shorthands, enrichments: enrichments };
+      }
+
+      function readRegions() {
+        return phase1Sections(doc).map(function (section) {
+          return qsa(".thought-row", section).map(function (row) {
+            return row.getAttribute("data-source-line") || "";
+          }).filter(Boolean);
+        }).filter(function (lines) { return lines.length > 0; });
+      }
+
+      function snapshot(suggestions, regions) {
+        return {
+          suggestions: suggestions || cloneSuggestions(),
+          regions: regions || readRegions(),
+        };
+      }
+
+      function sameSnapshot(a, b) {
+        if (!a || !b) return false;
+        return JSON.stringify(a.suggestions) === JSON.stringify(b.suggestions)
+          && JSON.stringify(a.regions) === JSON.stringify(b.regions);
+      }
+
+      function liveSnapshot() {
+        return snapshot();
+      }
+
+      function isDirty() {
+        if (index < 0 || !entries[index]) return false;
+        return !sameSnapshot(entries[index].snap, liveSnapshot());
+      }
+
+      function renderHistory() {
+        if (!list) return;
+        list.innerHTML = "";
+        var dirty = isDirty();
+        entries.forEach(function (entry, i) {
+          var item = document.createElement("li");
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "app-header__history-step";
+          button.textContent = entry.label;
+          if (i === index && !dirty) button.classList.add("is-current");
+          if (i > index) button.classList.add("is-future");
+          button.addEventListener("click", function () {
+            jumpHistory(i);
+          });
+          item.appendChild(button);
+          list.appendChild(item);
+        });
+        var current = list.querySelector(".is-current");
+        if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest" });
+        if (undoBtn) undoBtn.disabled = index <= 0 && !dirty;
+        if (redoBtn) redoBtn.disabled = dirty || index >= entries.length - 1;
+      }
+
+      function pushSnapshot(label, snap) {
+        if (applying) return;
+        var next = snap || liveSnapshot();
+        if (index >= 0 && sameSnapshot(entries[index].snap, next)) return;
+        entries = entries.slice(0, index + 1);
+        entries.push({ label: label, snap: next });
+        if (entries.length > 80) {
+          entries.shift();
+        }
+        index = entries.length - 1;
+        renderHistory();
+      }
+
+      function flushBurst() {
+        if (!burst) return;
+        var label = burst.label;
+        var regions = burst.regions;
+        clearTimeout(burst.timer);
+        burst = null;
+        pushSnapshot(label, snapshot(cloneSuggestions(), regions));
+      }
+
+      function applySnapshot(snap) {
+        applying = true;
+        phase1SuggestState = cloneSuggestions(snap.suggestions);
+        qsa("[data-phase1-suggest-input]", root).forEach(function (input) {
+          var kind = input.getAttribute("data-phase1-suggest-kind") || "";
+          var key = input.getAttribute("data-phase1-suggest-key") || "";
+          var text = "";
+          if (kind === "shorthand") {
+            var stored = findShorthandTokenKey(key);
+            text = phase1SuggestState.shorthands[stored] || "";
+          } else {
+            text = phase1SuggestState.enrichments[key] || "";
+          }
+          input.value = text;
+          if (kind === "shorthand") syncShorthandUi(key, text);
+          else syncEnrichmentUi(key, text);
+        });
+        var byLine = {};
+        qsa(".thought-row", doc).forEach(function (row) {
+          byLine[row.getAttribute("data-source-line") || ""] = row;
+        });
+        var sections = phase1Sections(doc);
+        var groups = snap.regions || [];
+        while (sections.length < groups.length) {
+          var created = phase1NewThought();
+          if (sections.length) sections[sections.length - 1].after(created);
+          else doc.appendChild(created);
+          sections.push(created);
+        }
+        groups.forEach(function (lines, i) {
+          var section = sections[i];
+          lines.forEach(function (line) {
+            var row = byLine[line];
+            if (!row) return;
+            var handle = qs('[data-thought-resize="bottom"]', section);
+            if (handle) section.insertBefore(row, handle);
+            else section.appendChild(row);
+          });
+        });
+        sections.slice(groups.length).forEach(function (section) {
+          section.remove();
+        });
+        paintPhase1Thoughts();
+        applying = false;
+        clearTimeout(phase1SuggestTimer);
+        clearTimeout(phase1RegionSaveTimer);
+        savePhase1Suggestions();
+        savePhase1Regions();
+        renderHistory();
+      }
+
+      function jumpHistory(nextIndex) {
+        if (nextIndex < 0 || nextIndex >= entries.length || !entries[nextIndex]) return;
+        if (burst) {
+          clearTimeout(burst.timer);
+          burst = null;
+        }
+        index = nextIndex;
+        applySnapshot(entries[index].snap);
+      }
+
+      phase1History.noteSuggest = function (label) {
+        if (applying) return;
+        if (!burst) burst = { label: label, regions: readRegions(), timer: 0 };
+        burst.label = label;
+        clearTimeout(burst.timer);
+        burst.timer = setTimeout(flushBurst, 700);
+        renderHistory();
+      };
+
+      phase1History.push = function (label) {
+        flushBurst();
+        pushSnapshot(label || "Edit notes");
+      };
+
+      phase1History.undo = function () {
+        if (burst) {
+          clearTimeout(burst.timer);
+          burst = null;
+        }
+        if (isDirty()) {
+          applySnapshot(entries[index].snap);
+          return;
+        }
+        if (index <= 0) return;
+        jumpHistory(index - 1);
+      };
+
+      phase1History.redo = function () {
+        if (burst || isDirty()) return;
+        if (index >= entries.length - 1) return;
+        jumpHistory(index + 1);
+      };
+
+      phase1History.save = function () {
+        flushBurst();
+        clearTimeout(phase1SuggestTimer);
+        clearTimeout(phase1RegionSaveTimer);
+        if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.textContent = "Saving";
+        }
+        Promise.all([savePhase1Suggestions(), savePhase1Regions()]).then(function (results) {
+          var ok = results.every(function (result) { return result && result.ok; });
+          if (!saveBtn) return;
+          saveBtn.disabled = false;
+          saveBtn.textContent = ok ? "Saved" : "Not saved";
+          setTimeout(function () {
+            if (saveBtn) saveBtn.textContent = saveLabel;
+          }, 1400);
+        });
+      };
+
+      if (undoBtn) undoBtn.addEventListener("click", function () { phase1History.undo(); });
+      if (redoBtn) redoBtn.addEventListener("click", function () { phase1History.redo(); });
+      if (saveBtn) saveBtn.addEventListener("click", function () { phase1History.save(); });
+      if (toggleBtn && panel) {
+        toggleBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var open = panel.hidden;
+          if (open) closeHeaderDisclosures(panel);
+          panel.hidden = !open;
+          toggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        document.addEventListener("click", function (e) {
+          if (panel.hidden || bar.contains(e.target)) return;
+          panel.hidden = true;
+          toggleBtn.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("keydown", function (e) {
+        if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+        var key = String(e.key || "").toLowerCase();
+        var inSuggest = e.target && e.target.closest && e.target.closest("[data-phase1-suggest-input]");
+        var typingElsewhere = e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.isContentEditable) && !inSuggest;
+        if (typingElsewhere) return;
+        if (key === "s" && !e.shiftKey) {
+          e.preventDefault();
+          phase1History.save();
+          return;
+        }
+        if (key !== "z") return;
+        e.preventDefault();
+        if (e.shiftKey) phase1History.redo();
+        else phase1History.undo();
+      });
+
+      pushSnapshot("Open");
+    }
   })();
 
   function phase1Hue(id, previous) {
@@ -3696,10 +4074,29 @@
       if (up) up.disabled = i === 0;
       if (down) down.disabled = i === sections.length - 1;
       section.classList.remove("is-splitting");
+      syncPhase1ResizeHandle(section, "top", i === 0);
+      syncPhase1ResizeHandle(section, "bottom", i === sections.length - 1);
     });
     phase1Summary(sections.length);
     document.dispatchEvent(new CustomEvent("phase1-regions-changed"));
     return sections;
+  }
+
+  function syncPhase1ResizeHandle(section, edge, hide) {
+    var handle = qs('[data-thought-resize="' + edge + '"]', section);
+    if (!handle) {
+      handle = document.createElement("button");
+      handle.type = "button";
+      handle.className = "thought__resize thought__resize--" + edge;
+      handle.setAttribute("data-thought-resize", edge);
+      handle.setAttribute(
+        "aria-label",
+        edge === "top" ? "Resize the top of this idea" : "Resize the bottom of this idea"
+      );
+      if (edge === "top") section.insertBefore(handle, section.firstChild);
+      else section.appendChild(handle);
+    }
+    handle.hidden = hide;
   }
 
   function clearPhase1SplitMode(except) {
@@ -3719,13 +4116,13 @@
 
   function savePhase1Regions() {
     var doc = qs("[data-phase1-lines]");
-    if (!doc) return;
+    if (!doc) return Promise.resolve({ ok: false });
     var file = doc.getAttribute("data-phase1-file") || "";
     var starts = phase1Sections(doc).map(function (section) {
       var row = qs(".thought-row", section);
       return row ? parseInt(row.getAttribute("data-source-line") || "0", 10) : 0;
     }).filter(function (n) { return n > 0; });
-    fetch("index.php?action=save-phase1-regions", {
+    return fetch("index.php?action=save-phase1-regions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file: file, starts: starts }),
@@ -3733,32 +4130,38 @@
       .then(function (res) { return res.json(); })
       .then(function (data) {
         var summary = qs("[data-thought-summary]");
-        if (!summary) return;
-        if (!data || !data.ok) {
-          summary.setAttribute("data-thought-edited", "0");
+        var ok = !!(data && data.ok);
+        if (summary) {
+          if (!ok) {
+            summary.setAttribute("data-thought-edited", "0");
+            phase1Summary(phase1Sections(doc).length);
+            summary.textContent = summary.textContent.replace(
+              " The map is this whole file.",
+              " Could not save boundary edits. The map is this whole file."
+            );
+          } else {
+            summary.setAttribute("data-thought-edited", data.edited ? "1" : "0");
+            phase1Summary(phase1Sections(doc).length);
+          }
+        }
+        return { ok: ok };
+      })
+      .catch(function () {
+        var summary = qs("[data-thought-summary]");
+        if (summary && doc) {
           phase1Summary(phase1Sections(doc).length);
           summary.textContent = summary.textContent.replace(
             " The map is this whole file.",
             " Could not save boundary edits. The map is this whole file."
           );
-          return;
         }
-        summary.setAttribute("data-thought-edited", data.edited ? "1" : "0");
-        phase1Summary(phase1Sections(doc).length);
-      })
-      .catch(function () {
-        var summary = qs("[data-thought-summary]");
-        if (!summary || !doc) return;
-        phase1Summary(phase1Sections(doc).length);
-        summary.textContent = summary.textContent.replace(
-          " The map is this whole file.",
-          " Could not save boundary edits. The map is this whole file."
-        );
+        return { ok: false };
       });
   }
 
-  function commitPhase1Regions() {
+  function commitPhase1Regions(label) {
     paintPhase1Thoughts();
+    phase1History.push(label || "Edit notes");
     clearTimeout(phase1RegionSaveTimer);
     phase1RegionSaveTimer = setTimeout(savePhase1Regions, 120);
   }
@@ -3766,6 +4169,8 @@
   function handlePhase1RegionClick(e) {
     var doc = qs("[data-phase1-lines]");
     if (!doc || !doc.contains(e.target)) return false;
+    if (e.target.closest("[data-thought-resize]")) return false;
+    phase1ResizeCancel();
 
     var splitAt = e.target.closest("[data-thought-split-at]");
     if (splitAt && doc.contains(splitAt)) {
@@ -3780,7 +4185,7 @@
       for (var i = rows.indexOf(row); i < rows.length; i++) {
         created.appendChild(rows[i]);
       }
-      commitPhase1Regions();
+      commitPhase1Regions("Split note");
       return true;
     }
 
@@ -3817,7 +4222,7 @@
         target.appendChild(sourceRow);
       });
       source.remove();
-      commitPhase1Regions();
+      commitPhase1Regions("Merge notes");
       return true;
     }
 
@@ -3827,8 +4232,379 @@
   function initPhase1Regions() {
     var doc = qs("[data-phase1-lines]");
     if (!doc) return;
+    var chooser = document.createElement("div");
+    chooser.className = "thought-resize-choice";
+    chooser.hidden = true;
+    chooser.setAttribute("role", "dialog");
+    chooser.setAttribute("aria-label", "What should happen to these lines");
+    document.body.appendChild(chooser);
+    var resize = null;
+    var suppressClick = false;
+
+    function clearResizeMarks() {
+      qsa(".is-resize-leaving, .is-resize-joining, .is-resize-boundary, .is-resize-pending, .is-resize-split, .is-resize-give", doc).forEach(function (row) {
+        row.classList.remove("is-resize-leaving", "is-resize-joining", "is-resize-boundary", "is-resize-pending", "is-resize-split", "is-resize-give");
+      });
+      qsa(".thought.is-resizing, .thought.is-resize-receiver", doc).forEach(function (section) {
+        section.classList.remove("is-resizing", "is-resize-receiver");
+      });
+      doc.style.removeProperty("--resize-hue");
+    }
+
+    function cancelResizeChoice() {
+      clearResizeMarks();
+      chooser.hidden = true;
+      chooser.innerHTML = "";
+      resize = null;
+      document.body.classList.remove("is-resizing-thought");
+    }
+
+    phase1ResizeCancel = function () {
+      if (!resize || !resize.choosing) return;
+      cancelResizeChoice();
+    };
+
+    function rowsAbovePointer(rows, clientY) {
+      var count = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var rect = rows[i].getBoundingClientRect();
+        if (rect.height <= 0) continue;
+        if (clientY >= rect.top + rect.height / 2) count += 1;
+        else break;
+      }
+      return count;
+    }
+
+    function markResize(state) {
+      clearResizeMarks();
+      state.section.classList.add("is-resizing");
+      var hue = state.section.style.getPropertyValue("--thought-hue").trim();
+      if (hue) doc.style.setProperty("--resize-hue", hue);
+      if (state.boundary === state.original) return;
+      var inward = state.edge === "bottom"
+        ? state.boundary < state.original
+        : state.boundary > state.original;
+      state.combined.forEach(function (row, i) {
+        var leaving = inward
+          ? (state.edge === "bottom"
+            ? i >= state.boundary && i < state.original
+            : i >= state.original && i < state.boundary)
+          : false;
+        var joining = !inward
+          ? (state.edge === "bottom"
+            ? i >= state.original && i < state.boundary
+            : i >= state.boundary && i < state.original)
+          : false;
+        if (leaving) row.classList.add("is-resize-leaving");
+        if (joining) row.classList.add("is-resize-joining");
+      });
+      if (state.boundary >= 0 && state.boundary < state.combined.length) {
+        state.combined[state.boundary].classList.add("is-resize-boundary");
+      }
+    }
+
+    function placeChooser(x, y) {
+      chooser.hidden = false;
+      chooser.style.left = "0px";
+      chooser.style.top = "0px";
+      var rect = chooser.getBoundingClientRect();
+      var left = Math.max(12, Math.min(x, window.innerWidth - rect.width - 12));
+      var top = Math.max(12, Math.min(y + 10, window.innerHeight - rect.height - 12));
+      chooser.style.left = left + "px";
+      chooser.style.top = top + "px";
+    }
+
+    function openResizeChoice(x, y) {
+      if (!resize || resize.boundary === resize.original) {
+        cancelResizeChoice();
+        return;
+      }
+      var moved = Math.abs(resize.boundary - resize.original);
+      var noun = moved === 1 ? "line" : "lines";
+      var inward = resize.edge === "bottom"
+        ? resize.boundary < resize.original
+        : resize.boundary > resize.original;
+      var neighbor = resize.edge === "bottom" ? "the idea below" : "the idea above";
+      var message = inward
+        ? moved + " " + noun + " would leave this idea."
+        : "Take " + moved + " " + noun + " from " + neighbor + ".";
+      var actions = inward
+        ? [
+            ["split", "Split into a new idea"],
+            ["give", neighbor.charAt(0).toUpperCase() + neighbor.slice(1) + " takes these lines"],
+          ]
+        : [["take", "Take over these lines"]];
+      chooser.innerHTML = "";
+      var text = document.createElement("p");
+      text.textContent = message;
+      chooser.appendChild(text);
+      actions.forEach(function (action) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-resize-choice", action[0]);
+        button.textContent = action[1];
+        chooser.appendChild(button);
+      });
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.setAttribute("data-resize-choice", "cancel");
+      cancel.textContent = "Cancel";
+      chooser.appendChild(cancel);
+      resize.choosing = true;
+      resize.affected = resizeAffected(resize);
+      document.body.classList.remove("is-resizing-thought");
+      placeChooser(x, y);
+      paintChoicePreview("");
+    }
+
+    function resizeInward(state) {
+      return state.edge === "bottom"
+        ? state.boundary < state.original
+        : state.boundary > state.original;
+    }
+
+    function resizeAffected(state) {
+      var inward = resizeInward(state);
+      var rows = [];
+      state.combined.forEach(function (row, i) {
+        var selected = inward
+          ? (state.edge === "bottom"
+            ? i >= state.boundary && i < state.original
+            : i >= state.original && i < state.boundary)
+          : (state.edge === "bottom"
+            ? i >= state.original && i < state.boundary
+            : i >= state.boundary && i < state.original);
+        if (selected) rows.push(row);
+      });
+      return rows;
+    }
+
+    function paintChoicePreview(choice) {
+      if (!resize || !resize.affected) return;
+      qsa(".thought.is-resize-receiver", doc).forEach(function (section) {
+        section.classList.remove("is-resize-receiver");
+      });
+      resize.affected.forEach(function (row) {
+        row.classList.remove("is-resize-leaving", "is-resize-joining", "is-resize-boundary", "is-resize-pending", "is-resize-split", "is-resize-give");
+      });
+      var mode = "is-resize-pending";
+      var hueSource = resize.section;
+      if (choice === "split") {
+        mode = "is-resize-split";
+      } else if (choice === "give") {
+        mode = "is-resize-give";
+        hueSource = resize.neighbor;
+      } else if (choice === "take") {
+        mode = "is-resize-give";
+        hueSource = resize.section;
+      }
+      var hue = hueSource.style.getPropertyValue("--thought-hue").trim();
+      if (hue) doc.style.setProperty("--resize-hue", hue);
+      resize.affected.forEach(function (row) {
+        row.classList.add(mode);
+      });
+      if (choice === "give" && resize.neighbor) {
+        resize.neighbor.classList.add("is-resize-receiver");
+      }
+    }
+
+    function appendThoughtRows(section, rows) {
+      var handle = qs('[data-thought-resize="bottom"]', section);
+      rows.forEach(function (row) {
+        if (handle) section.insertBefore(row, handle);
+        else section.appendChild(row);
+      });
+    }
+
+    function insertThoughtRowsBefore(section, rows, before) {
+      rows.forEach(function (row) {
+        section.insertBefore(row, before);
+      });
+    }
+
+    function applyResize(choice) {
+      if (!resize) return;
+      var state = resize;
+      var boundary = state.boundary;
+      var original = state.original;
+      var combined = state.combined;
+      var section = state.section;
+      var neighbor = state.neighbor;
+      cancelResizeChoice();
+      if (state.edge === "bottom") {
+        if (choice === "split") {
+          var created = phase1NewThought();
+          section.after(created);
+          appendThoughtRows(created, combined.slice(boundary, original));
+        } else if (choice === "give") {
+          var nextFirst = qs(".thought-row", neighbor);
+          insertThoughtRowsBefore(neighbor, combined.slice(boundary, original), nextFirst);
+        } else if (choice === "take") {
+          appendThoughtRows(section, combined.slice(original, boundary));
+          if (!qs(".thought-row", neighbor)) neighbor.remove();
+        }
+      } else if (choice === "split") {
+        var createdTop = phase1NewThought();
+        section.before(createdTop);
+        appendThoughtRows(createdTop, combined.slice(original, boundary));
+      } else if (choice === "give") {
+        appendThoughtRows(neighbor, combined.slice(original, boundary));
+      } else if (choice === "take") {
+        var ownFirst = qs(".thought-row", section);
+        insertThoughtRowsBefore(section, combined.slice(boundary, original), ownFirst);
+        if (!qs(".thought-row", neighbor)) neighbor.remove();
+      }
+      var resizeLabel = choice === "split"
+        ? "Split off lines"
+        : (choice === "give" ? "Give lines to the neighbor" : "Take over lines");
+      commitPhase1Regions(resizeLabel);
+    }
+
+    function beginResize(section, edge, neighbor, pointer) {
+      if (resize && resize.choosing) cancelResizeChoice();
+      var ownRows = qsa(".thought-row", section);
+      var neighborRows = qsa(".thought-row", neighbor);
+      if (!ownRows.length || !neighborRows.length) return null;
+      var combined = edge === "bottom" ? ownRows.concat(neighborRows) : neighborRows.concat(ownRows);
+      var original = edge === "bottom" ? ownRows.length : neighborRows.length;
+      resize = {
+        section: section,
+        neighbor: neighbor,
+        edge: edge,
+        combined: combined,
+        original: original,
+        boundary: original,
+        choosing: false,
+        min: edge === "bottom" ? 1 : 0,
+        max: edge === "bottom" ? combined.length : combined.length - 1,
+      };
+      section.classList.add("is-resizing");
+      document.body.classList.add("is-resizing-thought");
+      if (pointer !== null && pointer !== undefined) moveResize(pointer);
+      return resize;
+    }
+
+    function moveResize(clientY) {
+      if (!resize || resize.choosing) return;
+      var raw = rowsAbovePointer(resize.combined, clientY);
+      resize.boundary = Math.max(resize.min, Math.min(resize.max, raw));
+      markResize(resize);
+    }
+
+    function finishResize(x, y) {
+      if (!resize || resize.choosing) return;
+      if (resize.boundary === resize.original) {
+        cancelResizeChoice();
+        return;
+      }
+      openResizeChoice(x, y);
+    }
+
+    doc.addEventListener("pointerdown", function (e) {
+      var handle = e.target.closest("[data-thought-resize]");
+      if (!handle || handle.hidden || !doc.contains(handle) || e.button !== 0) return;
+      var section = handle.closest("section.thought");
+      if (!section) return;
+      var edge = handle.getAttribute("data-thought-resize") || "";
+      var sections = phase1Sections(doc);
+      var index = sections.indexOf(section);
+      var neighbor = edge === "top" ? sections[index - 1] : sections[index + 1];
+      if (!neighbor) return;
+      e.preventDefault();
+      if (!beginResize(section, edge, neighbor, e.clientY)) return;
+      try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+      function onMove(ev) {
+        moveResize(ev.clientY);
+      }
+      function onUp(ev) {
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        try {
+          if (handle.hasPointerCapture(ev.pointerId)) handle.releasePointerCapture(ev.pointerId);
+        } catch (err) {}
+        suppressClick = true;
+        finishResize(ev.clientX, ev.clientY);
+      }
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
+
+    doc.addEventListener("keydown", function (e) {
+      var handle = e.target.closest("[data-thought-resize]");
+      if (!handle || handle.hidden || !doc.contains(handle)) return;
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      var section = handle.closest("section.thought");
+      if (!section) return;
+      var edge = handle.getAttribute("data-thought-resize") || "";
+      var sections = phase1Sections(doc);
+      var index = sections.indexOf(section);
+      var neighbor = edge === "top" ? sections[index - 1] : sections[index + 1];
+      if (!neighbor) return;
+      var state = beginResize(section, edge, neighbor, null);
+      if (!state) return;
+      var inward = edge === "bottom" ? e.key === "ArrowUp" : e.key === "ArrowDown";
+      var next = inward
+        ? state.original + (edge === "bottom" ? -1 : 1)
+        : state.original + (edge === "bottom" ? 1 : -1);
+      if (next < state.min || next > state.max || next === state.original) {
+        cancelResizeChoice();
+        return;
+      }
+      e.preventDefault();
+      state.boundary = next;
+      markResize(state);
+      var rect = handle.getBoundingClientRect();
+      finishResize(rect.left + rect.width / 2, rect.bottom);
+    });
+
+    chooser.addEventListener("pointerover", function (e) {
+      var button = e.target.closest("[data-resize-choice]");
+      if (!button || !chooser.contains(button)) return;
+      paintChoicePreview(button.getAttribute("data-resize-choice") || "");
+    });
+    chooser.addEventListener("pointerout", function (e) {
+      var next = e.relatedTarget && e.relatedTarget.closest
+        ? e.relatedTarget.closest("[data-resize-choice]")
+        : null;
+      if (next && chooser.contains(next)) return;
+      paintChoicePreview("");
+    });
+    chooser.addEventListener("focusin", function (e) {
+      var button = e.target.closest("[data-resize-choice]");
+      if (!button) return;
+      paintChoicePreview(button.getAttribute("data-resize-choice") || "");
+    });
+
+    chooser.addEventListener("click", function (e) {
+      var button = e.target.closest("[data-resize-choice]");
+      if (!button) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var choice = button.getAttribute("data-resize-choice") || "";
+      if (choice === "cancel" || !resize) {
+        cancelResizeChoice();
+        return;
+      }
+      applyResize(choice);
+    });
+
+    document.addEventListener("click", function (e) {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
+      if (chooser.hidden || chooser.contains(e.target)) return;
+      cancelResizeChoice();
+    });
+
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
+      if (resize && resize.choosing) {
+        cancelResizeChoice();
+        return;
+      }
       if (!qs(".thought.is-splitting", doc)) return;
       clearPhase1SplitMode(null);
     });
@@ -4021,12 +4797,7 @@
       toggle.addEventListener("click", function (e) {
         e.stopPropagation();
         var willOpen = panel.hidden;
-        if (willOpen) {
-          var snapPanel = qs("[data-snapshots-panel]");
-          var snapToggle = qs("[data-snapshots-toggle]");
-          if (snapPanel) snapPanel.hidden = true;
-          if (snapToggle) snapToggle.setAttribute("aria-expanded", "false");
-        }
+        if (willOpen) closeHeaderDisclosures(panel);
         setProjectsOpen(willOpen);
       });
     }
@@ -4104,12 +4875,7 @@
       toggle.addEventListener("click", function (e) {
         e.stopPropagation();
         var willOpen = panel.hidden;
-        if (willOpen) {
-          var projectPanel = qs("[data-projects-panel]");
-          var projectToggle = qs("[data-projects-toggle]");
-          if (projectPanel) projectPanel.hidden = true;
-          if (projectToggle) projectToggle.setAttribute("aria-expanded", "false");
-        }
+        if (willOpen) closeHeaderDisclosures(panel);
         setSnapshotsOpen(willOpen);
       });
       document.addEventListener("click", function (e) {
