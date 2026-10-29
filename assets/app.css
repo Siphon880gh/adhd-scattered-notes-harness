@@ -5278,3 +5278,121 @@ body.has-source-taskbar .source-dock {
   background: var(--bg-elevated);
   color: var(--accent);
 }
+
+/* "Why is this not automatic" explainer (shared wording with Heavy Docs) */
+.why-not-auto {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.why-not-auto__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.why-not-auto__summary::-webkit-details-marker {
+  display: none;
+}
+
+.why-not-auto__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.why-not-auto__body {
+  margin-top: 0.45rem;
+  max-width: 42rem;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.why-not-auto__body p,
+.why-not-auto__body ol {
+  margin: 0 0 0.45rem;
+}
+
+.why-not-auto__body ol {
+  padding-left: 1.2rem;
+}
+
+.why-not-auto__body li + li {
+  margin-top: 0.3rem;
+}
+
+/* Read-only suggestion once a phase is locked */
+.item-card__suggest--readonly {
+  margin-top: 0.5rem;
+}
+
+.suggest-readonly {
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  color: var(--ink-muted);
+}
+
+/* Kept-lines coverage on line-accounting file tabs */
+.drawer__files .coverage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.coverage__bar {
+  display: inline-block;
+  width: 2.6rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: rgba(240, 113, 120, 0.35);
+  overflow: hidden;
+}
+
+.coverage__fill {
+  display: block;
+  height: 100%;
+  background: var(--added);
+}
+
+.coverage__pct {
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+}
+
+/* Download button in the original note viewer */
+.source-modal__download {
+  height: 2rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.source-modal__download:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

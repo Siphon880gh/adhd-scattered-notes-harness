@@ -805,6 +805,65 @@ function render_count_bar_items(array $items): void
 }
 
 /**
+ * Count kept vs dropped lines in one file's blame entries.
+ * Blank lines are left out so spacing does not pull the percentage down.
+ *
+ * @param mixed $entries
+ * @return array{total: int, mapped: int, dropped: int, pct: int}|null
+ */
+function blame_file_coverage($entries): ?array
+{
+    if (!is_array($entries) || $entries === []) {
+        return null;
+    }
+    $total = 0;
+    $mapped = 0;
+    foreach ($entries as $entry) {
+        if (!is_array($entry) || trim((string) ($entry['text'] ?? '')) === '') {
+            continue;
+        }
+        $total++;
+        $fate = (string) ($entry['fate'] ?? '');
+        $to = is_array($entry['to'] ?? null) ? array_filter(array_map('trim', array_map('strval', $entry['to']))) : [];
+        if ($to !== [] && strpos($fate, 'dropped') !== 0) {
+            $mapped++;
+        }
+    }
+    if ($total === 0) {
+        return null;
+    }
+    return [
+        'total' => $total,
+        'mapped' => $mapped,
+        'dropped' => $total - $mapped,
+        'pct' => (int) round($mapped * 100 / $total),
+    ];
+}
+
+/**
+ * Collapsible note on why the organizing runs in the user's own AI chat.
+ * Copy adapted from Heavy Docs so both harnesses explain it the same way.
+ */
+function render_why_not_automatic(): void
+{
+    ?>
+    <details class="why-not-auto">
+        <summary class="why-not-auto__summary"><span class="why-not-auto__icon" aria-hidden="true">i</span> Why is this not automatic</summary>
+        <div class="why-not-auto__body">
+            <p>Weng provides this service for free and cannot cover the ongoing cost of AI tokens. That's why the organizing runs in an AI harness you already use, like Cursor or Claude Code, instead of inside this app. It's also why the AI doesn't apply your Suggest notes the moment you save them.</p>
+            <p>There are several ways to accomplish this:</p>
+            <ol>
+                <li><strong>Run the skill in an AI harness like Cursor or Claude Code:</strong> it uses your own AI environment and token allowance, and it can read and write the files in your <code>inputs/</code> folder.</li>
+                <li><strong>Provide your own API key:</strong> the app could call the AI directly, billed to you. That needs you to trust the app not to store, log, or copy the key, which is easier to check with a locally running app, though not secure without reviewing how it handles credentials.</li>
+            </ol>
+            <p><strong>For now, letting you use your own AI tools is the most practical approach.</strong> It keeps the service free while using AI resources you already have. This app saves what you do here (checks, tags, moves, Suggest notes) to files, and the skill picks them up when you return to the chat.</p>
+            <p>If the service eventually becomes commercial and can sustain the cost of AI tokens, AI processing could be integrated directly into the app for a more seamless experience.</p>
+        </div>
+    </details>
+    <?php
+}
+
+/**
  * Source ref as a button that opens the original note file in the viewer.
  * Shows plain text when the file is not in this folder.
  */
@@ -923,6 +982,12 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
                 }
                 render_source_open_link((string) $src);
             }
+            echo '</div>';
+        }
+        if ($reviewLocked && $suggestion !== '') {
+            echo '<div class="item-card__suggest item-card__suggest--readonly">';
+            echo '<p class="item-card__suggest-caption">Your suggestion</p>';
+            echo '<p class="suggest-readonly">' . e($suggestion) . '</p>';
             echo '</div>';
         }
         if (!$reviewLocked) {
@@ -1215,6 +1280,7 @@ $isSnapshotView = $viewingSnapshot !== null;
         <p class="muted">
             Return to Cursor or Claude Code to continue the skill chat after you have notes ready in an input folder.
         </p>
+        <?php render_why_not_automatic(); ?>
     </main>
 <?php elseif ($phase === 1):
     $phase1Counts = phase1_review_counts($phase1, $noteFiles, $phase1Suggestions);
@@ -1295,6 +1361,7 @@ $isSnapshotView = $viewingSnapshot !== null;
             <li>For blocked URLs, paste text here, then tell chat you pasted so the skill can enrich from it.</li>
             <li>Or say Phase 1 looks good and ask to start Phase 2.</li>
         </ul>
+        <?php render_why_not_automatic(); ?>
     </aside>
 
     <div class="layout" data-phase1-root>
@@ -1886,6 +1953,7 @@ $isSnapshotView = $viewingSnapshot !== null;
             <li>Use <strong>Suggest</strong> when a note should be rewritten or reorganized (including task vs not-a-task); return to chat so the AI can apply it.</li>
             <li>Panel moves/tags save into <code>phase2.json</code>; Suggest notes save into <code>phase2-suggestions.md</code>.</li>
         </ul>
+        <?php render_why_not_automatic(); ?>
     </aside>
     <?php endif; ?>
 
@@ -2267,12 +2335,24 @@ $isSnapshotView = $viewingSnapshot !== null;
         <?php if ($noteFiles === []): ?>
             <p class="muted" style="padding:1rem">No source note files.</p>
         <?php else: ?>
+            <?php
+            $coverageBlame = is_array($phase2) && is_array($phase2['blame'] ?? null) ? $phase2['blame'] : [];
+            ?>
             <div class="drawer__files">
-                <?php foreach ($noteFiles as $i => $name): ?>
+                <?php foreach ($noteFiles as $i => $name):
+                    $cov = blame_file_coverage($coverageBlame[$name] ?? null);
+                    ?>
                     <button type="button"
                             data-blame-file="<?= e($name) ?>"
-                            class="<?= $i === 0 ? 'is-active' : '' ?>">
+                            class="<?= $i === 0 ? 'is-active' : '' ?>"
+                            <?php if ($cov !== null): ?>title="<?= e($cov['mapped'] . ' of ' . $cov['total'] . ' lines kept in a note, ' . $cov['dropped'] . ' dropped') ?>"<?php endif; ?>>
                         <?= e($name) ?>
+                        <?php if ($cov !== null): ?>
+                            <span class="coverage" aria-label="<?= e($cov['pct'] . '% of lines kept') ?>">
+                                <span class="coverage__bar"><span class="coverage__fill" style="width: <?= (int) $cov['pct'] ?>%"></span></span>
+                                <span class="coverage__pct"><?= (int) $cov['pct'] ?>%</span>
+                            </span>
+                        <?php endif; ?>
                     </button>
                 <?php endforeach; ?>
                 <button type="button"
@@ -2378,6 +2458,7 @@ $isSnapshotView = $viewingSnapshot !== null;
         <div class="source-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
             <div class="source-modal__header">
                 <h2 id="source-modal-title" data-source-modal-title>Original note</h2>
+                <button type="button" class="source-modal__download" data-source-download title="Download this note file">Download</button>
                 <button type="button" class="source-modal__btn" data-source-minimize title="Minimize to the bar below" aria-label="Minimize">&#8722;</button>
                 <button type="button" class="source-modal__btn source-modal__btn--close" data-source-close title="Close" aria-label="Close">&times;</button>
             </div>

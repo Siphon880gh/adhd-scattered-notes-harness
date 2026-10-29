@@ -6331,6 +6331,29 @@
     }
   });
 
+  function downloadCurrent() {
+    if (!current) return;
+    var content = findContent(current.file);
+    if (!content) return;
+    var lines = [];
+    content.querySelectorAll(".source-line__t").forEach(function (el) {
+      lines.push(el.textContent);
+    });
+    var blob = new Blob([lines.join("\n") + "\n"], { type: "text/plain;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = current.file;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  modal.addEventListener("click", function (e) {
+    if (e.target.closest("[data-source-download]")) downloadCurrent();
+  });
+
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (!modal.hidden) minimize();
