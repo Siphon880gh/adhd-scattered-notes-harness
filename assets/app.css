@@ -2131,6 +2131,14 @@ a.note-link:focus-visible {
   color: var(--added);
 }
 
+.line--unreadable {
+  color: var(--ink-muted);
+}
+
+.line--unreadable .line__n {
+  color: var(--ink-muted);
+}
+
 .url-block {
   margin: 0.35rem 0 0.85rem;
   padding: 0.75rem 0.85rem;

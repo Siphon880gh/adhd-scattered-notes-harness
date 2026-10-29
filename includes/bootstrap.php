@@ -1095,7 +1095,14 @@ function phase1_thoughts(array $lines, array $overrides = []): array
         while ($current !== [] && trim((string) ($lines[$current[count($current) - 1]]['text'] ?? '')) === '') {
             array_pop($current);
         }
-        $firstText = (string) ($lines[$content[0]]['text'] ?? '');
+        $firstRow = $lines[$content[0]];
+        $firstText = (string) (is_array($firstRow) ? ($firstRow['text'] ?? '') : '');
+        if (is_array($firstRow) && phase1_line_is_image_only($firstText)) {
+            $imageLabel = phase1_image_summary_label($firstRow);
+            if ($imageLabel !== '') {
+                $firstText = $imageLabel;
+            }
+        }
         $startN = (int) ($lines[$content[0]]['n'] ?? ($content[0] + 1));
         $last = $content[count($content) - 1];
         $endN = (int) ($lines[$last]['n'] ?? ($last + 1));
@@ -1125,6 +1132,9 @@ function phase1_thoughts(array $lines, array $overrides = []): array
                 if (!empty($link['blocked'])) {
                     $blocked = true;
                 }
+            }
+            if (is_array($row) && phase1_line_has_image_reading($row)) {
+                $added = true;
             }
         }
         $id = count($thoughts) + 1;
@@ -1404,10 +1414,153 @@ function phase1_attention_catalog(?array $phase1, array $noteFiles): array
 }
 
 /**
+ * Embedded-image readings on a Phase 1 line.
+ * One embed uses `image`. Several embeds on the same line use `images`.
+ *
+ * @param array<string, mixed> $line
+ * @return list<array{src: string, read: bool, about: string, details: list<string>, reason: string}>
+ */
+function phase1_image_entries(array $line): array
+{
+    $raw = [];
+    if (isset($line['images']) && is_array($line['images'])) {
+        $raw = $line['images'];
+    } elseif (isset($line['image']) && is_array($line['image'])) {
+        $raw = [$line['image']];
+    }
+
+    $out = [];
+    foreach ($raw as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $details = [];
+        if (isset($entry['details']) && is_array($entry['details'])) {
+            foreach ($entry['details'] as $detail) {
+                $detail = trim((string) $detail);
+                if ($detail !== '') {
+                    $details[] = $detail;
+                }
+            }
+        }
+        $out[] = [
+            'src' => trim((string) ($entry['src'] ?? '')),
+            'read' => !empty($entry['read']),
+            'about' => trim((string) ($entry['about'] ?? '')),
+            'details' => $details,
+            'reason' => trim((string) ($entry['reason'] ?? '')),
+        ];
+    }
+
+    return $out;
+}
+
+function phase1_line_is_image_only(string $text): bool
+{
+    $text = trim($text);
+    if ($text === '') {
+        return false;
+    }
+
+    return preg_match(
+        '/^(?:!\[\[[^\]\n]+\]\]|!\[[^\]\n]*\]\([^)\n]+\)|<img\b[^>]*>)$/iu',
+        $text
+    ) === 1;
+}
+
+/**
+ * Green added text for pictures that were read. Empty when there is nothing to show.
+ *
+ * @param array<string, mixed> $line
+ */
+function phase1_image_added_text(array $line): string
+{
+    $entries = phase1_image_entries($line);
+    $many = count($entries) > 1;
+    $blocks = [];
+    foreach ($entries as $entry) {
+        if (!$entry['read'] || ($entry['about'] === '' && $entry['details'] === [])) {
+            continue;
+        }
+        $head = $entry['about'];
+        if ($many && $entry['src'] !== '') {
+            $head = $entry['src'] . ($head !== '' ? ' — ' . $head : '');
+        }
+        if ($head === '' && $entry['src'] !== '') {
+            $head = $entry['src'];
+        }
+        $rows = [];
+        if ($head !== '') {
+            $rows[] = '+ ' . $head;
+        }
+        foreach ($entry['details'] as $detail) {
+            $rows[] = '- ' . $detail;
+        }
+        if ($rows !== []) {
+            $blocks[] = implode("\n", $rows);
+        }
+    }
+
+    return implode("\n\n", $blocks);
+}
+
+/**
+ * @param array<string, mixed> $line
+ * @return list<string>
+ */
+function phase1_image_unread_lines(array $line): array
+{
+    $out = [];
+    foreach (phase1_image_entries($line) as $entry) {
+        if ($entry['read']) {
+            continue;
+        }
+        $src = $entry['src'] !== '' ? $entry['src'] : 'photo';
+        $reason = $entry['reason'] !== '' ? $entry['reason'] : 'could not be read';
+        $out[] = 'Could not read ' . $src . ' — ' . $reason;
+    }
+
+    return $out;
+}
+
+/**
+ * Short label when a note opens on a picture.
+ *
+ * @param array<string, mixed> $line
+ */
+function phase1_image_summary_label(array $line): string
+{
+    foreach (phase1_image_entries($line) as $entry) {
+        if (!$entry['read']) {
+            continue;
+        }
+        if ($entry['about'] !== '') {
+            return $entry['about'];
+        }
+        if ($entry['details'] !== []) {
+            return $entry['details'][0];
+        }
+    }
+    if (phase1_image_unread_lines($line) !== []) {
+        return 'Could not read photo';
+    }
+
+    return '';
+}
+
+/**
+ * @param array<string, mixed> $line
+ */
+function phase1_line_has_image_reading(array $line): bool
+{
+    return phase1_image_added_text($line) !== '';
+}
+
+/**
  * @param array<string, mixed>|null $phase1
  * @param list<string> $noteFiles
  * @param array<string, mixed> $suggestions
- * @return array{files: int, uncertain: int, youtube: int, links: int, blocked: int}
+ * @return array{files: int, uncertain: int, youtube: int, links: int, images: int, blocked: int}
  */
 function phase1_review_counts(?array $phase1, array $noteFiles, array $suggestions = []): array
 {
@@ -1415,6 +1568,7 @@ function phase1_review_counts(?array $phase1, array $noteFiles, array $suggestio
     $uncertain = 0;
     $youtube = 0;
     $links = 0;
+    $images = 0;
     $blocked = 0;
     if (is_array($phase1) && isset($phase1['files']) && is_array($phase1['files'])) {
         foreach ($phase1['files'] as $fileName => $fileData) {
@@ -1439,6 +1593,9 @@ function phase1_review_counts(?array $phase1, array $noteFiles, array $suggestio
                 if (is_array($yt) && !empty($yt['added'])) {
                     $youtube++;
                 }
+                if (phase1_line_has_image_reading($line)) {
+                    $images++;
+                }
                 $link = $line['link'] ?? null;
                 if (is_array($link)) {
                     if (!empty($link['blocked'])) {
@@ -1461,6 +1618,7 @@ function phase1_review_counts(?array $phase1, array $noteFiles, array $suggestio
         'uncertain' => $uncertain,
         'youtube' => $youtube,
         'links' => $links,
+        'images' => $images,
         'blocked' => $blocked,
     ];
 }
@@ -1503,6 +1661,7 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
         'uncertain' => [],
         'youtube' => [],
         'links' => [],
+        'images' => [],
         'blocked' => [],
     ];
 
@@ -1558,6 +1717,21 @@ function phase1_review_jumps(?array $phase1, array $noteFiles, string $activeFil
                 $label = $where . ' · ' . ($title !== '' ? $title : 'YouTube');
                 $anchor = phase1_anchor('yt', $file, $n);
                 $jumps['youtube'][] = [
+                    'text' => $label,
+                    'title' => $label,
+                    'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
+                    'id' => $file === $activeFile ? $anchor : '',
+                ];
+            }
+
+            if (phase1_line_has_image_reading($line)) {
+                $title = phase1_image_summary_label($line);
+                if ($title === '') {
+                    $title = phase1_thought_preview($text, 120);
+                }
+                $label = $where . ' · ' . ($title !== '' ? phase1_thought_preview($title, 120) : 'Image');
+                $anchor = phase1_anchor('img', $file, $n);
+                $jumps['images'][] = [
                     'text' => $label,
                     'title' => $label,
                     'href' => phase1_jump_href($file, $activeFile, $anchor, $previewPhase),
@@ -1655,6 +1829,9 @@ function phase1_file_nav_stats(?array $phase1, array $noteFiles, array $suggesti
             }
             $yt = $line['youtube'] ?? null;
             if (is_array($yt) && !empty($yt['added'])) {
+                $added++;
+            }
+            if (phase1_line_has_image_reading($line)) {
                 $added++;
             }
             $link = $line['link'] ?? null;

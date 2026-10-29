@@ -7,8 +7,10 @@ description: >-
   tags (shown on cards and in the filter bar), and a Phase 3 lock for filter and
   copy. Use when the user wants to organize braindump .md/.txt notes
   (including .url.txt link captures), paste a public Evernote or UpNote share
-  URL (download its images into attachments/ and link them), run the
-  scattered-notes harness, update shorthands, enrich YouTube/web links (or
+  URL (download its images into attachments/ and link them), read each
+  embedded image for text or for what it shows and keep a summary or the
+  important details, run the scattered-notes harness, update shorthands,
+  enrich YouTube/web links (or
   collect browser pastes for blocked URLs), redraw Phase 1 note regions
   (split / merge / delete; read phase1-regions.md), or advance
   phase1/phase2/phase3 artifacts for index.php. If the inputs/ project is
@@ -59,9 +61,9 @@ Obsidian:
 
 The path is relative to that inputs folder. `attachments/nginx-error.png` is the same idea when the file already lives in `inputs/{name}/attachments/`.
 
-When you explain this folder method, add one sentence: if they want the pictures handled for them, share a public Evernote or UpNote URL instead. This skill downloads those images.
+When you explain this folder method, add two sentences: if they want the pictures handled for them, share a public Evernote or UpNote URL instead — this skill downloads those images. Either way, each linked picture is read for text or for what it shows, and that reading stays with the photo.
 
-Do not flag `![...](...)` or `![[...]]` as uncertain shorthand. In Phase 2, keep that image line in the card body so the photo stays on the card.
+Do not flag `![...](...)` or `![[...]]` as uncertain shorthand. Read each embedded image as in **Reading images**. In Phase 2, keep that image line in the card body so the photo stays on the card, and keep the reading with it.
 
 ### 2. A public Evernote or UpNote URL
 
@@ -84,7 +86,7 @@ If the message is that URL, import it. Do not answer with only the start menu.
 
 Obsidian `![[attachments/01-short-words.jpg]]` is also valid. Prefer the markdown form when you write the file so the caption is kept. Do not leave the remote image URL in the note.
 5. If a download fails, write `[image could not be downloaded]` in that spot and say so. Do not invent a picture.
-6. Then continue with the phase they asked for, or Phase 1 if they only handed you the URL. `attachments/` is not a note. Do not read image files as notes.
+6. Then continue with the phase they asked for, or Phase 1 if they only handed you the URL. `attachments/` is not a note. Read each linked image as in **Reading images**. The image file is not its own note.
 
 The app shows each linked photo at a size that fits the page and keeps its shape. Clicking it opens a larger view they can enlarge further.
 
@@ -96,7 +98,7 @@ Per batch folder `inputs/{folder}/`:
 |------|------|
 | `*.md`, `*.txt` | Raw scattered notes (includes `*.url.txt` — URL capture files). Image lines use markdown `![caption](file.png)` or Obsidian `![[file.png]]`, with the file in this same folder |
 | `attachments/` | Images downloaded from a public Evernote or UpNote note, or placed by the user. Not a note. Linked from a note with the syntax above |
-| `phase1.json` | Uncertain marks + YouTube + link enrichments (incl. blocked URLs awaiting user paste) |
+| `phase1.json` | Uncertain marks + YouTube + link enrichments (incl. blocked URLs awaiting user paste) + a reading for each embedded image |
 | `phase1-suggestions.md` | User feedback for Phase 1 — shared shorthand notes, per-enrichment notes, whole-idea notes (colored edge), and per-line notes; **read before rewriting Phase 1 / advancing** |
 | `phase1-regions.md` | User corrections to note boundaries (split / merge) and deleted ideas. **Read before Phase 2 grouping.** Do not treat it as a note. Do not organize a deleted line. |
 | `phase2.json` | Organized notes + per-line blame map + item tags + `filterLayout` |
@@ -115,7 +117,7 @@ When you write `app.config.json`:
 - The app’s **Projects** menu does this too. On the next start, read the file again — the user may have switched projects in the browser. Snapshots are not a project switch; they are saved Phase 3 views and do not change `inputFolder`.
 | `shorthands.md` | App-wide glossary — **always read before marking uncertainty**; shared by every batch |
 
-Skip when reading notes: `phase1.json`, `phase1-suggestions.md`, `phase1-regions.md`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, `attachments/`, and any non-`.md`/`.txt` files. Image files are not notes. An image embed line inside a note is a note line — keep it, and do not mark the embed syntax as uncertain.
+Skip when reading notes: `phase1.json`, `phase1-suggestions.md`, `phase1-regions.md`, `phase2.json`, `phase2-suggestions.md`, any leftover `shorthands.md` inside a batch folder, `attachments/`, and any non-`.md`/`.txt` files. Image files are not notes. An image embed line inside a note is a note line — keep it, do not mark the embed syntax as uncertain, and read the picture as in **Reading images**.
 
 A scattered note may be a line, a group of lines, or a whole file. A divider line is only a candidate boundary. You decide whether it starts a new idea or is a section of the same idea or article. `phase1-regions.md` records that decision. The batch is one broad category (coding, linux, etc.).
 
@@ -193,6 +195,79 @@ A scattered note may be a line, a group of lines, or a whole file. A divider lin
   - After the user pastes: derive `title` / `about` from `userPaste` (+ `userNote` / `intent`), set `added: true`, keep `blocked: true` only if you still lack enough text (otherwise `blocked: false`). Never wipe `userPaste` / `userNote`.
   - **Forbidden** link stubs: invented titles, “could not fetch”, or fake summaries when `blocked` is true and `userPaste` is empty.
 
+### Reading images
+
+When a note embeds a picture, read that picture while you take the notes in. Do this in Phase 1, before you write `phase1.json`, including right after an Evernote or UpNote import. If Phase 2 starts and an embed still has no reading, read it then.
+
+An image file is not a note. A picture in the folder that no note embeds is not a note. Do not invent a note for it. Skip an embed on a line listed under `### Deletes` in `phase1-regions.md`. Skip an embed inside a fenced code block — that is an example of syntax, not a picture in the note.
+
+An embed is markdown `![caption](path)`, Obsidian `![[path]]` (a `|width` or `|caption` after the path is still that file), or an HTML `<img src="path">`. The path is relative to `inputs/{folder}/`, including `attachments/` and `media/`. Use the path only: ignore a title in quotes after it, and ignore `<...>` around it. The same file linked more than once shares one reading — write that full reading on each line. A caption or a filename is a hint. Open the file anyway.
+
+Open jpg, png, gif, and webp directly. For svg, avif, bmp, or another image type, try once. For an `http(s)` image URL, fetch it and look. A gif is the frame you can see. Do not describe motion you did not see.
+
+Decide from the picture itself:
+
+- **Text.** Screenshots, errors, terminals, whiteboards, handwriting, labels, or a photo of a page: pull out the important writing. Keep the exact errors, commands, numbers, names, and URLs. Leave out chrome that does not change the idea, such as a clock or a repeated window title, unless it matters here.
+- **Visual meaning.** A diagram, sketch, layout, photo, or UI with little writing: say what it shows and what that means in this note. Name the parts a person would need later.
+- **Both.** When the writing and the layout both matter, summarize what the picture is, then keep the important text.
+- **Nothing extra.** A blank image, or a picture that only repeats the caption or the surrounding lines: say that in a few words in `about`, and leave `details` empty.
+- **Cannot read.** Missing file, a format you cannot open, a failed fetch, or a picture too unclear to interpret: set `read` to false, put why in `reason`, and leave `about` and `details` empty. Do not invent text or a scene.
+
+Shape the result to the picture. One or two sentences in `about` when that holds it. Add `details` as separate strings when there are several distinct facts — a dense screenshot, a list, or a page of text. Use a tighter list when it still keeps every fact the person would need to act on or look up later. Do not dump every word of a long page, and do not drop those facts. Do not put a bullet character on the strings. A summary may paraphrase the scene. Keep an error string, a command, or a label in the picture’s own words.
+
+Use the surrounding note to judge what is important. Do not flag the embed syntax as uncertain shorthand.
+
+On a line with one embed:
+
+```json
+{
+  "n": 4,
+  "text": "![nginx error](attachments/01-nginx-error.png)",
+  "marks": [],
+  "image": {
+    "src": "attachments/01-nginx-error.png",
+    "read": true,
+    "about": "nginx -t fails on an unexpected } in nginx.conf line 12.",
+    "details": [
+      "nginx: [emerg] unexpected \"}\" in /etc/nginx/nginx.conf:12",
+      "nginx: configuration file /etc/nginx/nginx.conf test failed"
+    ]
+  }
+}
+```
+
+When the picture cannot be read:
+
+```json
+"image": {
+  "src": "attachments/01-missing.png",
+  "read": false,
+  "about": "",
+  "details": [],
+  "reason": "file not found"
+}
+```
+
+`read` is true only after you opened the image and could interpret it. `about` is one or two sentences. `details` is a list of strings, or empty. Omit `reason` when `read` is true.
+
+A line with several embeds uses `images`, an array of that same object in reading order, and does not also set `image`.
+
+**Forbidden:** a reading you did not get from looking, a placeholder such as “image” or “screenshot” when the picture had specifics, or `read: true` with empty `about` and empty `details` after you found something worth saying.
+
+When you rewrite `phase1.json`, keep an existing `image` / `images` value. Re-open the file only when the reading is missing, the user says it is wrong, or a suggestion changes it. A `## Enrichment:` note on that line, a `## Line:` note, a `## Idea:` note that talks about the picture, or a chat correction revises `about` and `details`. When a Phase 2 suggestion rewrites the card text that came from the picture, update the stored reading too, so the next pass does not restore the old one.
+
+The app shows the photo on the note line. When `read` is true and `about` or `details` is set, it shows a green added line above that photo: `about`, then each detail. Suggest on that green line is the enrichment note. When `read` is false, the app shows `Could not read {src} — {reason}` and does not show a green line.
+
+In Phase 2, keep the embed in the card so the photo still shows, and put the reading in the card so Copy includes it.
+
+- When the picture is the idea and the source has no sentence of its own, the heading names the idea and the opening sentence is `about`.
+- When the source already explains the idea, keep that explanation as the opening. Put `about` under the embed only when it adds something the opening does not already say.
+- Put `details` under that embed, one bullet each. Do not repeat `about` under the embed when the opening sentence already is `about`.
+- The same reading twice in one card: keep the full bullets once, under the first embed, and under the later embed say it is the same picture. The stored objects stay complete.
+- Do not replace the embed with the reading. When `read` is false, keep the embed and do not add a made-up description.
+
+After Phase 1, say how many pictures you read. Name every file you could not read, with the reason. When there are five or fewer, include each `about` in that message. When there are more, say the readings are on the green lines and will be on the cards, and do not paste every bullet into chat.
+
 ### `phase1-suggestions.md`
 
 User-written feedback saved by the app **during Phase 1** (batch folder). May be missing — treat as empty. **Always read this file (if present) before rewriting `phase1.json`, before updating `shorthands.md` from app notes, and before advancing to Phase 2.**
@@ -220,7 +295,7 @@ This line is the task. Keep the exact command.
 ```
 
 - `## Shorthand: {token}` — one note for that shorthand **type**. The app shows the **same** comment on every uncertain flag with that token (case-insensitive). Applying it once is enough for all occurrences — update root `shorthands.md`, then clear those uncertain marks on rewrite.
-- `## Enrichment: {file}:{line}` — feedback on a YouTube / fetched-link green added line (`file` is the note filename, `line` is 1-based). Revise that line’s `youtube` or `link` title/about accordingly.
+- `## Enrichment: {file}:{line}` — feedback on a green added line: YouTube, a fetched link, or an image reading (`file` is the note filename, `line` is 1-based). Revise that line’s `youtube`, `link`, or `image` / `images` fields accordingly.
 - `## Idea: {file}:{start}-{end}` — feedback on that **whole idea** (the colored region covering those 1-based source lines, inclusive). The user writes it by clicking the colored edge. Apply it when you group notes for Phase 2: wording, whether it stays one idea, and whether it is a task, reference, or article. Do not ignore it because the region was also split or merged; the line range is the idea they meant.
 - `## Line: {file}:{line}` — feedback on **that source line’s text** only. The user writes it by clicking the line. Apply it to how that line is worded and classified when you organize Phase 2. It is not a comment on the rest of the idea.
 - Omit empty sections. The app POSTs to `index.php?action=save-phase1-suggestions`. Do not wipe this file when rewriting `phase1.json` unless the user asked to clear suggestions.
@@ -344,6 +419,7 @@ The original lines, commands, links, and images.
 - Say what the idea is, in words a person would keep. Use their terms. Where `shorthands.md` explains a token, the opening sentence may spell that token out so the note stands on its own. Leave their original line underneath.
 - The source already opens with a sentence that explains the idea: keep that sentence as the opening. Do not stack a second summary on top of it.
 - The original lines stay after the blank line: commands, paths, images (`![…](…)` / `![[…]]`), URLs, and the wording they wrote. The explanation is added in front. It does not replace the detail.
+- An image embed stays in that original detail. Its **Reading images** result is part of the note a person copies: the opening sentence when the picture is the idea, and the important details under the embed. Do not replace the picture with the reading.
 - A one-line jot still gets a heading and one sentence, then that original line.
 
 YouTube and fetched links still follow the rules below. The card heading is `youtube.title` or `link.title`. The opening sentence is `youtube.about` or `link.about` when that text already explains the page or video. Then the URL and the rest. Do not invent a second title or a second summary on top of a real `about`.
@@ -353,6 +429,8 @@ On a later rewrite, keep a heading or an opening sentence the person already fix
 Phase 2 items that come from a YouTube line **must reuse** `youtube.title` and `youtube.about` from `phase1.json` (e.g. reference title = that title; body includes the URL plus `about`). Do **not** invent a new title or write a metadata placeholder in Phase 2.
 
 Phase 2 items that come from a non-YouTube link / `*.url.txt` line **must reuse** `link.title` and `link.about` from `phase1.json` when `link.added` is true (body includes the URL plus `about`; honor `intent` in the wording). If `link.blocked` is still true and `userPaste` is empty, keep the item honest (e.g. reference titled from the URL host + “blocked — paste pending”) — do **not** invent page content. If `userPaste` is present but Phase 1 was not re-run, you may derive title/about from the paste during Phase 2.
+
+Phase 2 items that contain an image embed **must reuse** that line’s `image` / `images` reading from `phase1.json`, as in **Reading images**. If the reading is missing, open the picture before you write the card. Do not invent one.
 
 **Browser edits:** In Phase 2, the app POSTs to `index.php?action=save-phase2` and writes moves, tags, reorder, green-check (`checked`), deletes, and `filterLayout` into this same `phase2.json`. **Delete** on a card removes that organized item and records its source lines under `### Deletes` in `phase1-regions.md`, with blame fate `dropped_user`. Phase 3 still saves moves/tags/reorder/deletes/`filterLayout`, but **Suggest** and green-check are locked off (review is finished). Delete stays available. Always **re-read** `phase2.json` and `phase1-regions.md` before Phase 3 or any fidelity fix so user edits and deletes are not overwritten blindly. Do not recreate a deleted item. Preserve each item’s `checked` boolean when rewriting organized items.
 
@@ -388,7 +466,7 @@ Optional notes about organized item id `t1` (wrong bucket, merge, rewrite headin
 
 - `## Panel: tasks` / `## Panel: reference` / `## Panel: articleCandidates` — guidance for an entire section (tagging preferences, heading/formatting style, ordering, what belongs in that bucket).
 - `## Item: {id}` — guidance for one organized item (`t1`, `r1`, `a1`, …). Match by `id` from `phase2.json`.
-- When applying an item suggestion: rewrite `title` (heading), `body`, or **both**, as needed. Leave a field unchanged only when the suggestion does not call for changing it.
+- When applying an item suggestion: rewrite `title` (heading), `body`, or **both**, as needed. Leave a field unchanged only when the suggestion does not call for changing it. If that rewrite changes what a picture says, update the stored `image` / `images` reading too (**Reading images**).
 - When applying a panel suggestion: apply across items in that section (retitle style, reorder, retag, move misfits out, etc.) without inventing requests the user did not write.
 - Omit empty sections. Ignore unknown item ids (item may have been removed).
 - The app POSTs to `index.php?action=save-suggestions` to write this file. Do not wipe it when rewriting `phase2.json`.
@@ -458,7 +536,7 @@ Announce the detected state briefly (e.g. “Active: `inputs/sample` · phase 2 
 1. **Reset sample and select it** — wipe/recreate `inputs/sample/`, set it as the active project, continue Phase 1.
 2. **See the app with no folder selected** — recreate the sample notes on disk, but leave `inputFolder` empty so the app shows its empty state. This is only a preview of that screen. You still have to pick a folder afterward (or say you want to select sample) before the app can show notes or artifacts.
 3. **Use folder `{name}`** — one option per non-sample directory under `inputs/` (do not offer stale `sample` as “use as-is”; use option 1 to reset + select sample).
-4. **None / use my notes** — if they need a new batch, tell them both ways from **How the user gives you notes**. Folder: create `inputs/{name}/` and dump `.md`/`.txt` notes (separate files, or one file with divider lines such as `---`, `<hr>`, or `***`). Photos in that folder use markdown `![caption](file.png)` or Obsidian `![[file.png]]`, with the image file in the same folder. Then say that a public Evernote or UpNote URL is the automatic path: images are downloaded into `attachments/` and linked for them. You decide which dividers are a new idea and which are a section of the same article. If they already pasted a public URL, import it instead of only repeating this menu.
+4. **None / use my notes** — if they need a new batch, tell them both ways from **How the user gives you notes**. Folder: create `inputs/{name}/` and dump `.md`/`.txt` notes (separate files, or one file with divider lines such as `---`, `<hr>`, or `***`). Photos in that folder use markdown `![caption](file.png)` or Obsidian `![[file.png]]`, with the image file in the same folder. Then say that a public Evernote or UpNote URL is the automatic path: images are downloaded into `attachments/` and linked for them. Either way, each linked picture is read for text or for what it shows, and that reading stays with the photo. You decide which dividers are a new idea and which are a section of the same article. If they already pasted a public URL, import it instead of only repeating this menu.
 
 **B. Mid-session** — offer continue first, with phase-specific wording:
 
@@ -510,7 +588,7 @@ Selecting sample is never “open whatever is already there” — **Reset sampl
   2. Continue with Phase 1 on that folder.
 
 - **If they choose “None / use my notes” and no suitable folder exists:**
-  1. Tell them both ways. Folder: create `inputs/{name}/`, add `.md`/`.txt` notes, and for a photo put the image in that same folder and link it with `![caption](file.png)` or `![[file.png]]`. Public URL: in Evernote set **Anyone with the link can view** and copy the link; in UpNote use Share → **Copy Link** (phone: **Share Link**). Paste that https URL here. You download images into `inputs/{name}/attachments/` and write the markdown image links. An `upnote://` link is not the public page. Then re-run once the notes are in the folder.
+  1. Tell them both ways. Folder: create `inputs/{name}/`, add `.md`/`.txt` notes, and for a photo put the image in that same folder and link it with `![caption](file.png)` or `![[file.png]]`. Public URL: in Evernote set **Anyone with the link can view** and copy the link; in UpNote use Share → **Copy Link** (phone: **Share Link**). Paste that https URL here. You download images into `inputs/{name}/attachments/` and write the markdown image links. Each linked picture is read for text or for what it shows, and that reading stays with the photo. An `upnote://` link is not the public page. Then re-run once the notes are in the folder.
 
 #### Sample note templates (recreate exactly; no phase JSON)
 
@@ -588,27 +666,31 @@ asdf vs nvm vs mise — pick one for node on laptop, stop installing globally wi
 WTF is the difference between EXPOSE and publishing -p again
 ```
 
-### 1. Phase 1 — mark uncertain + YouTube + links
+### 1. Phase 1 — mark uncertain + YouTube + links + images
 
 1. Ensure project-root `shorthands.md` exists (create a stub with `# Shorthands` and an empty table if missing).
 2. **Read root `shorthands.md` fully** before marking anything.
-3. Read all note `.md`/`.txt` files in the folder (including `*.url.txt`).
-4. For **each** YouTube / `youtu.be` URL found: run a metadata fetch (oEmbed or watch page) **before** writing `phase1.json`. Fill `youtube.title` / `youtube.about` from that response only. If the fetch fails, use the blocked-`link` path below so the app can collect a browser paste.
-5. For **each** non-YouTube `http(s)` URL (inline in notes **or** in `*.url.txt` files): try to visit the page **before** writing `phase1.json`. Capture surrounding-note text as `link.intent`. On success: fill `link.title` / `link.about` (honor intent), `added: true`, `blocked: false`. On **any** failure to open/read the page: `blocked: true`, `added: false`, do not invent content.
-6. **Preserve** any existing `link.userPaste` / `link.userNote` already saved by the app when rewriting `phase1.json`. If paste text is present for a blocked URL, derive `title`/`about` from it and set `added: true`.
-7. Write/update `phase1.json` with line-level marks, YouTube descriptors, and link enrichments (no placeholder titles).
-8. Set `app.config.json` `"phase": 1`.
-9. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks / green added descriptors / **blocked-URL paste panels** / **in-app Suggest** / **numbered note regions and the map**, and **return to this chat** to:
+3. Read all note `.md`/`.txt` files in the folder (including `*.url.txt`). Read `phase1-regions.md` if it exists so you can skip embeds on deleted lines.
+4. For **each** image embed that is not inside a fenced code block and not on a deleted line: open the picture and set `image` or `images` as in **Reading images**, **before** writing `phase1.json`. Do not invent text or a scene you did not see. Keep a reading already stored unless it is missing or a suggestion corrects it.
+5. For **each** YouTube / `youtu.be` URL found: run a metadata fetch (oEmbed or watch page) **before** writing `phase1.json`. Fill `youtube.title` / `youtube.about` from that response only. If the fetch fails, use the blocked-`link` path below so the app can collect a browser paste.
+6. For **each** non-YouTube `http(s)` URL (inline in notes **or** in `*.url.txt` files): try to visit the page **before** writing `phase1.json`. Capture surrounding-note text as `link.intent`. On success: fill `link.title` / `link.about` (honor intent), `added: true`, `blocked: false`. On **any** failure to open/read the page: `blocked: true`, `added: false`, do not invent content.
+7. **Preserve** any existing `link.userPaste` / `link.userNote` already saved by the app when rewriting `phase1.json`. If paste text is present for a blocked URL, derive `title`/`about` from it and set `added: true`. Keep any existing `image` / `images` reading the same way, unless you re-read that picture or a suggestion changes it.
+8. Write/update `phase1.json` with line-level marks, YouTube descriptors, link enrichments, and image readings (no placeholder titles, no invented picture text).
+9. Set `app.config.json` `"phase": 1`.
+10. Tell the user to open `index.php` (e.g. `php -S localhost:8765` then browse), review marks / green added descriptors (YouTube, links, and image readings) / **Could not read** lines / **blocked-URL paste panels** / **in-app Suggest** / **numbered note regions and the map**, and **return to this chat** to:
    - explain any flagged shorthand/symbols (chat **or** read `phase1-suggestions.md` shorthand sections — one note covers every flag of that token), or
-   - apply enrichment Suggest notes from `phase1-suggestions.md`, or
+   - apply enrichment Suggest notes from `phase1-suggestions.md`, including a correction to an image reading, or
    - apply whole-idea notes (`## Idea:`) and per-line notes (`## Line:`) from `phase1-suggestions.md` — the colored edge is the whole idea, a clicked line is that line’s text — or
    - say they pasted blocked-URL text (re-read `phase1.json` and enrich from `userPaste`), or
+   - correct a picture — Suggest on its green line, or say in chat what it actually shows, or
    - say a region is wrong — they fix that in the app with **Split** or **Merge up** / **Merge down** (saved to `phase1-regions.md`; colors update automatically and neighboring notes never share a color). Read that file before you group notes again, or
    - say Phase 1 looks good and advance to Phase 2.
 
-**Before rewriting Phase 1 artifacts, and again before Phase 2:** always read `phase1-suggestions.md` if present. For each `## Shorthand:` note, update root `shorthands.md` and remove matching uncertain marks. For each `## Enrichment:` note, revise that line’s `youtube` / `link` fields. For each `## Idea:` note, treat that source range as the user described when you group and word the next phase. For each `## Line:` note, apply that comment to that source line’s text only. Do not wipe `phase1-suggestions.md` unless the user cleared Suggest in the app.
+In that same message, report image readings as in **Reading images** (how many you read, each `about` when there are five or fewer, and every file you could not read).
 
-Phase 1 may loop: user explains (chat or Suggest) → update root `shorthands.md` / enrichments → rewrite `phase1.json`; or user pastes blocked URL text in the app → re-read pastes → rewrite link enrichments → user refreshes the app.
+**Before rewriting Phase 1 artifacts, and again before Phase 2:** always read `phase1-suggestions.md` if present. For each `## Shorthand:` note, update root `shorthands.md` and remove matching uncertain marks. For each `## Enrichment:` note, revise that line’s `youtube`, `link`, or `image` / `images` fields. For each `## Idea:` note, treat that source range as the user described when you group and word the next phase. For each `## Line:` note, apply that comment to that source line’s text, and to its image reading when the comment is about the picture. Do not wipe `phase1-suggestions.md` unless the user cleared Suggest in the app.
+
+Phase 1 may loop: user explains (chat or Suggest) → update root `shorthands.md` / enrichments / image readings → rewrite `phase1.json`; or user pastes blocked URL text in the app → re-read pastes → rewrite link enrichments → user refreshes the app.
 
 ### 2. Phase 2 — organize with fidelity
 
@@ -618,7 +700,7 @@ Only after the user confirms Phase 1 is done:
 2. **Read** `inputs/{folder}/phase2-suggestions.md` if it exists (per-item and/or `## Panel: tasks|reference|articleCandidates` feedback from a prior review). Apply it — including rewriting each suggested item’s **heading (`title`) and/or `body`**, and applying whole-section guidance (tagging / heading style / ordering) as needed.
 3. Read `phase1-regions.md` if it exists. A listed split starts a new note at that line; a listed join keeps that line with the previous note. A listed delete stays out of the organized notes (`blame` fate `dropped_user`). Judge every divider (`--` / `---` / `------`, `<hr>`, `**`, or two or more blank lines) as a new idea or as a section of the same article, and write joins for the sections. One blank line is paragraph space when any divider exists. Do not wipe `phase1-regions.md`. Do not drop `### Deletes`.
 4. Read `phase1-suggestions.md` if it exists. Apply every `## Idea:` note to that whole source range and every `## Line:` note to that source line’s text while you group and word the cards. Do not wipe `phase1-suggestions.md`.
-5. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**. Enrich **every** item as in **Readable note**: a heading in `title` when the source has none, then one sentence or a short paragraph that says what the idea is, then a blank line, then the original detail. When a source line is a markdown or Obsidian image embed, keep that embed in the item body so the photo still shows. Do not replace the picture with a description only.
+5. Turn notes into grouped **tasks** and **reference** knowledge; recommend **article candidates**. Enrich **every** item as in **Readable note**: a heading in `title` when the source has none, then one sentence or a short paragraph that says what the idea is, then a blank line, then the original detail. When a source line is a markdown, Obsidian, or HTML image embed, keep that embed in the item body so the photo still shows. Do not replace the picture with a description only. Put the **Reading images** result on the card with that embed. If the reading is missing, open the picture before you write the card.
 6. For YouTube source lines, copy `youtube.title` / `youtube.about` from `phase1.json` into the organized item — never replace with a stub.
 7. For link / `*.url.txt` source lines, copy `link.title` / `link.about` when `added` is true; if still blocked with empty paste, do not invent page content.
 8. Account for every line in `blame` — fidelity first; do not silently drop details.
@@ -664,27 +746,28 @@ Tags are already on the cards from Phase 2. Phase 3 does not wait to invent them
 
 ## Agent checklist
 
-1. On every user message: read `app.config.json` and list `inputs/` folders. If you do not necessarily know which project (**Which project**), ask which folder and stop. When you know, announce folder + phase. On a start, then detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3) and offer the matching option set from §0. A public Evernote or UpNote URL is an import, not only a menu: follow **How the user gives you notes** (download images into `attachments/`, link them with markdown image syntax, then continue). When you explain the folder method, also mention markdown `![caption](file.png)` and Obsidian `![[file.png]]` with the image in that same inputs folder, and that a public Evernote or UpNote URL downloads the images for them.
+1. On every user message: read `app.config.json` and list `inputs/` folders. If you do not necessarily know which project (**Which project**), ask which folder and stop. When you know, announce folder + phase. On a start, then detect **no folder** / **mid-session** (phase 1–2) / **final session** (phase 3) and offer the matching option set from §0. A public Evernote or UpNote URL is an import, not only a menu: follow **How the user gives you notes** (download images into `attachments/`, link them with markdown image syntax, then continue). When you explain the folder method, also mention markdown `![caption](file.png)` and Obsidian `![[file.png]]` with the image in that same inputs folder, and that a public Evernote or UpNote URL downloads the images for them. Say that each linked picture is read for text or for what it shows, and that reading stays with the photo.
 2. Mid-session: offer **Continue** first (phase 2 wording: review parse fidelity — nothing dropped; invite **Suggest** for notes that should change); Final: offer **Continue (phase 3, locked)** first — filter/copy exit — and remind **“Revert to Phase 2”** then refresh unlocks Suggest again. Do not wipe an in-progress or finished batch unless they choose a reset/switch.
 3. If reset sample + select: delete `inputs/sample/`, recreate note files only (six files including `0-preface.md`, `a.url.txt`, and `b.url.txt`; no `phase1.json` / `phase2.json`), set `app.config.json` to `sample` phase 1, continue Phase 1.
 4. If “See the app with no folder selected”: same recreate, reset `app.config.json` to `"inputFolder": ""` and `"phase": 1`; empty-state preview only — they still must pick a folder or select sample afterward; re-offer folders.
 5. If another / switch folder: update `app.config.json` to that folder phase 1.
 6. Read root `shorthands.md` before any uncertainty marks.
-7. Never treat root `shorthands.md` / `phase1.json` / `phase1-suggestions.md` / `phase1-regions.md` / `phase2.json` / `phase2-suggestions.md` / `attachments/` / image files as source notes. An image embed line inside a `.md` or `.txt` note is a source line. Do not mark `![...](...)` or `![[...]]` as uncertain. In Phase 2, keep that embed in the card body.
+7. Never treat root `shorthands.md` / `phase1.json` / `phase1-suggestions.md` / `phase1-regions.md` / `phase2.json` / `phase2-suggestions.md` / `attachments/` / image files as source notes. An image embed line inside a `.md` or `.txt` note is a source line. Do not mark `![...](...)` or `![[...]]` as uncertain. Read the picture as in **Reading images**. In Phase 2, keep that embed in the card body and keep the reading with it.
 8. Phase 1 artifacts must be visible in the app after refresh.
 9. Every YouTube URL: metadata fetch first; non-placeholder `title`/`about`; `youtube.added: true`. On fetch failure: prefer blocked `link` panel (or `YouTube (lookup failed)` fallback).
 10. Every non-YouTube URL and every `*.url.txt`: try fetch; set `link` with intent from surrounding text; on failure `blocked: true` and wait for app paste (`userPaste`/`userNote`). Preserve pastes across rewrites. After paste: derive `title`/`about`, set `added: true`.
-11. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube`/`link` fields; keep `## Idea:` and `## Line:` notes for the next phase; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits, joins, and deletes. A deleted line is not an idea. Judge each divider yourself (`--`, `---`, `------`, `<hr>`, a line of asterisks, or two or more blank lines in a row): a new idea stays split; a section of the same idea or article is joined. One blank line is paragraph space when any divider exists. Dash length does not decide. Single blank lines are the candidates only when the file has no divider. Neighboring notes never share a color. Do not wipe `phase1-regions.md`. Do not remove `### Deletes` unless the user restored that idea.
-12. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file. Also read `phase1-suggestions.md` and apply every `## Idea:` note to that whole source range and every `## Line:` note to that source line’s text. Do not wipe `phase1-suggestions.md`.
-13. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`. Link items reuse Phase 1 `link.title` / `link.about` when added.
-14. Phase 2: every line in every note file appears in `blame`. Every organized item has a human heading and an opening sentence or short paragraph that says what the idea is, then the original detail (**Readable note**). Every organized item has area tags, and `filterLayout` groups those tags for the Filter bar. Preserve tags the user already edited in the app. Preserve a heading or opening sentence they already fixed.
-15. Do not advance to Phase 2 without explicit user confirmation.
-16. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail, tag → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body` and retag); tags are already on each card and in the Filter bar (writes `phase2.json`). Phase 3 only fills tags that are still missing, then locks review.
-17. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite, including tags, before filling any tag that is still missing.
-18. Do not advance to Phase 3 without explicit user confirmation.
-19. Phase 3: keep the Phase 2 tags; fill any item that is still untagged; preserve user tags; **refresh `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
-20. On **“Revert to Phase 2”**: set `"phase": 2` (keep folder + artifacts); tell them to refresh the app; resume Phase 2.
-21. After each write, remind the user how to return to Cursor / Claude Code to continue (Phase 3: optional tag refine, or **“Revert to Phase 2”**).
+11. Every image embed: during Phase 1, open the picture and set `image` or `images` as in **Reading images**, before writing `phase1.json`. Keep a stored reading when rewriting unless it is missing or a suggestion corrects it. Do not invent text or a scene you did not see. After Phase 1, report how many pictures you read and name every file you could not read.
+12. Before rewriting Phase 1: read `phase1-suggestions.md` if present; apply shorthand notes to `shorthands.md` (one token note covers all flags of that token) and enrichment notes to `youtube` / `link` / `image` / `images` fields; keep `## Idea:` and `## Line:` notes for the next phase; do not wipe that file unless cleared in the app. Whenever grouping notes or answering which lines are one idea, read `phase1-regions.md` if present and honor its splits, joins, and deletes. A deleted line is not an idea. Judge each divider yourself (`--`, `---`, `------`, `<hr>`, a line of asterisks, or two or more blank lines in a row): a new idea stays split; a section of the same idea or article is joined. One blank line is paragraph space when any divider exists. Dash length does not decide. Single blank lines are the candidates only when the file has no divider. Neighboring notes never share a color. Do not wipe `phase1-regions.md`. Do not remove `### Deletes` unless the user restored that idea.
+13. Before any Phase 2 write or revision: read `phase2-suggestions.md` if present; apply panel/item feedback (rewrite item `title` and/or `body` as the suggestion requires); do not wipe that file. If that rewrite changes what a picture says, update the stored image reading too. Also read `phase1-suggestions.md` and apply every `## Idea:` note to that whole source range and every `## Line:` note to that source line’s text. Do not wipe `phase1-suggestions.md`.
+14. Phase 2 YouTube items reuse Phase 1 `youtube.title` / `youtube.about`. Link items reuse Phase 1 `link.title` / `link.about` when added. Image embeds reuse Phase 1 `image` / `images` (**Reading images**). If that reading is missing, open the picture before writing the card.
+15. Phase 2: every line in every note file appears in `blame`. Every organized item has a human heading and an opening sentence or short paragraph that says what the idea is, then the original detail (**Readable note**), including each image reading with its embed. Every organized item has area tags, and `filterLayout` groups those tags for the Filter bar. Preserve tags the user already edited in the app. Preserve a heading or opening sentence they already fixed.
+16. Do not advance to Phase 2 without explicit user confirmation.
+17. After Phase 2 (and when continuing a phase-2 session): remind the user to review in the app whether the AI parsed their notes correctly — nothing dropped unnecessarily; **invite Suggest on any note that should change** (heading and/or body, bucket, merge, detail, tag, or an image reading → `phase2-suggestions.md`; next pass may rewrite `title` and/or `body` and retag); tags are already on each card and in the Filter bar (writes `phase2.json`). Phase 3 only fills tags that are still missing, then locks review.
+18. Before Phase 3 (and before fidelity rewrites): re-read `phase2.json` and `phase2-suggestions.md` from disk; apply any pending suggestions as a Phase 2 rewrite, including tags, before filling any tag that is still missing.
+19. Do not advance to Phase 3 without explicit user confirmation.
+20. Phase 3: keep the Phase 2 tags; fill any item that is still untagged; preserve user tags; **refresh `filterLayout` with dividers between major tag groups**; write back to `phase2.json`; set phase 3. Remind: locked — filter + Copy into their notes app; no Suggest / green-check; they can always say **“Revert to Phase 2”** then refresh the app.
+21. On **“Revert to Phase 2”**: set `"phase": 2` (keep folder + artifacts); tell them to refresh the app; resume Phase 2.
+22. After each write, remind the user how to return to Cursor / Claude Code to continue (Phase 3: optional tag refine, or **“Revert to Phase 2”**).
 
 ## Return-to-chat prompts (for the user)
 
@@ -699,6 +782,7 @@ After Phase 1 writes, also tell them they can say things like:
 - “`wtf` means write the function”
 - “I added Phase 1 Suggest notes in the app — continue”
 - “I pasted the blocked URL text in the app — continue”
+- “The picture on line 4 is the nginx error, not a diagram”
 - “Phase 1 looks good — start Phase 2”
 
 After Phase 2 writes:

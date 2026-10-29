@@ -1189,6 +1189,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 ['label' => 'Files', 'count' => $phase1Counts['files'], 'jumps' => $phase1Jumps['files']],
                 ['label' => 'YouTube', 'count' => $phase1Counts['youtube'], 'jumps' => $phase1Jumps['youtube']],
                 ['label' => 'Links', 'count' => $phase1Counts['links'], 'jumps' => $phase1Jumps['links']],
+                ['label' => 'Images', 'count' => $phase1Counts['images'], 'jumps' => $phase1Jumps['images']],
             ],
         ],
         [
@@ -1216,9 +1217,9 @@ $isSnapshotView = $viewingSnapshot !== null;
             <?php render_phase_carousel((int) $livePhase, (int) $phase, $isPhasePreview); ?>
         </div>
         <p>
-            Uncertain symbols and shorthand are highlighted. YouTube and fetched links show a green added descriptor.
+            Uncertain symbols and shorthand are highlighted. YouTube, fetched links, and pictures the skill could read show a green added descriptor.
             Blocked URLs open a paste panel — visit the page in your browser, describe what you need, and paste relevant text.
-            A photo linked with markdown or Obsidian syntax shows in the note. Click it for a larger view you can enlarge.
+            A photo linked with markdown or Obsidian syntax shows in the note. Its reading sits on the green line above it. If the picture could not be read, that line says so. Click the photo for a larger view you can enlarge.
             Reload this page after the skill updates <code>phase1.json</code>.
         </p>
         <ul>
@@ -1247,6 +1248,10 @@ $isSnapshotView = $viewingSnapshot !== null;
             <li>
                 For URLs the skill could read, check the green added notes. If you’re not satisfied, tell Cursor / Claude Code
                 <em>or</em> add an in-app Suggest on that enrichment.
+            </li>
+            <li>
+                For a picture, check the green added line (the summary, or the important text from the image).
+                If that reading is wrong, Suggest on it or say so in chat.
             </li>
             <li>For blocked URLs, paste text here, then tell chat you pasted so the skill can enrich from it.</li>
             <li>Or say Phase 1 looks good and ask to start Phase 2.</li>
@@ -1294,7 +1299,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         >+</button>
                         <div class="file-nav__col-tip" id="file-nav-tip-added" data-section-info-tip role="tooltip">
                             <strong>Added enrichments</strong>
-                            Green “+” lines from YouTube or fetched web links. Informational.
+                            Green “+” lines from YouTube, fetched web links, or a picture the skill read. Informational.
                         </div>
                     </div>
                 </div>
@@ -1533,6 +1538,47 @@ $isSnapshotView = $viewingSnapshot !== null;
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        <?php
+                        $imageAddedText = phase1_image_added_text($line);
+                        $imageUnread = phase1_image_unread_lines($line);
+                        if ($imageAddedText !== ''):
+                            ?>
+                            <div class="line line--added<?= $hasEnrichmentSuggestion ? ' has-phase1-suggestion' : '' ?>" id="<?= e(phase1_anchor('img', $activeFile, $n)) ?>" data-phase1-enrichment-wrap="<?= e($enrichmentKey) ?>">
+                                <div class="line__n">+</div>
+                                <div class="line__body">
+                                    <div class="line__text"><?= linkify_note($imageAddedText) ?></div>
+                                    <div class="line__toolbar">
+                                        <div class="phase1-suggest" data-phase1-suggest data-phase1-suggest-kind="enrichment" data-phase1-suggest-key="<?= e($enrichmentKey) ?>">
+                                            <button type="button" class="phase1-suggest__toggle" data-phase1-suggest-toggle aria-expanded="false" title="Suggestion for AI" aria-label="Suggestion for this image reading">
+                                                <svg class="suggest-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                                                <span>Suggest</span>
+                                            </button>
+                                            <div class="phase1-suggest__panel" data-phase1-suggest-panel hidden>
+                                                <label class="phase1-suggest__caption" for="<?= e($enrichmentFieldId) ?>-image">Tell the AI how to change this image reading</label>
+                                                <textarea
+                                                    class="phase1-suggest__input"
+                                                    id="<?= e($enrichmentFieldId) ?>-image"
+                                                    data-phase1-suggest-input
+                                                    data-phase1-suggest-kind="enrichment"
+                                                    data-phase1-suggest-key="<?= e($enrichmentKey) ?>"
+                                                    rows="3"
+                                                    maxlength="4000"
+                                                    placeholder="e.g. this is the nginx error text, not a diagram…"
+                                                ><?= e($enrichmentSuggestion) ?></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($imageUnread !== []): ?>
+                            <div class="line line--unreadable" id="<?= e(phase1_anchor('imgmiss', $activeFile, $n)) ?>">
+                                <div class="line__n">!</div>
+                                <div class="line__body">
+                                    <div class="line__text"><?= linkify_note(implode("\n", $imageUnread)) ?></div>
                                 </div>
                             </div>
                         <?php endif; ?>
