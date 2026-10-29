@@ -21,7 +21,7 @@ If you have ADHD, notes rarely land in one place. You jot something in a `.txt` 
 
 This harness is for that chaotic, on-the-fly jotting of a fast ADHD brain: dump first, then let AI sort it into something usable—**actionable** tasks or **referable** knowledge.
 
-It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Dividers are fine: dashes (`--`, `---`, `------`), `<hr>`, a line of asterisks, or two blank lines in a row. One blank line is paragraph space. The app draws each divider as a candidate note, and the skill decides whether it starts a new idea or is only a section of the same article. You can paste an entire article next to other thoughts and mark it off with a divider; internal rules in that article stay part of it when they are sections, not new ideas. If a region is still wrong, redraw it in Phase 1 (Split, or Merge up / Merge down). That correction is saved and the skill follows it.
+It does not matter if notes on the same subject are split across different files, if each line is a different idea, or if a whole document is broken up with empty lines. Dividers are fine: dashes (`--`, `---`, `------`), `<hr>`, a line of asterisks, or two blank lines in a row. One blank line is paragraph space. The app draws each divider as a candidate note, and the skill decides whether it starts a new idea or is only a section of the same article. You can paste an entire article next to other thoughts and mark it off with a divider; internal rules in that article stay part of it when they are sections, not new ideas. If a region is still wrong, redraw it in Phase 1 (Split, or Merge up / Merge down). Delete removes an idea from every phase; the original file stays, and Restore in Phase 1 brings it back. That correction is saved and the skill follows it.
 
 Shorthands and symbols are welcome too. When something is unclear, AI asks you to clarify, then builds a dictionary of your shorthands (`shorthands.md`) so it can read your notes the way you write them.
 
@@ -41,14 +41,26 @@ Each folder under `inputs/` is a separate project. Use **Projects** in the app h
 
 1. Create a batch folder: `inputs/whatname/`
 2. Drop scattered notes as `.md` and/or `.txt`. One thought per file, many thoughts in one file, or one thought split across files—all fine. A divider (`---`, `<hr>`, `***`, or two blank lines) marks a possible new idea; the skill decides whether it is a new idea or a section of the same article. A single blank line is the candidate only when the file has no divider.
-3. In Cursor or Claude Code, run the skill at `.agents/skills/scattered-notes` and pick that folder (the skill will set `app.config.json`) — **or** prompt to use the scattered note organizing skill.
-4. Serve the app and open it to review artifacts:
+3. A photo can live in that same folder. Link it with markdown `![caption](photo.png)` or Obsidian `![[photo.png]]`. To have images downloaded for you, skip the files and paste a public note URL instead (next section).
+4. In Cursor or Claude Code, run the skill at `.agents/skills/scattered-notes` and pick that folder (the skill will set `app.config.json`) — **or** prompt to use the scattered note organizing skill.
+5. Serve the app and open it to review artifacts:
 
 ```bash
 php -S localhost:8765
 ```
 
 Then open `http://localhost:8765`.
+
+Photos in a note show at a size that fits the page and keep their shape. Click a photo to open a larger view, then **Enlarge** if you want it bigger.
+
+## Public Evernote or UpNote link
+
+Instead of copying files in, make the note public in the app and paste the https URL in the skill chat.
+
+- **Evernote.** Open the note, choose Share, set **Anyone with the link can view**, and copy the link (`https://share.evernote.com/note/...`, or an older `evernote.com/shard/...` public link).
+- **UpNote.** Open the note, choose Share, then **Copy Link** on desktop or **Share Link** on a phone. An `upnote://` link only opens the app. Use the https link.
+
+The skill saves the note under `inputs/{name}/`, downloads each image into `attachments/`, and links it with `![caption](attachments/01-name.jpg)`. You do not place the image files yourself.
 
 ## Input layout
 
@@ -59,6 +71,8 @@ inputs/
   whatname/
     note-one.md
     random-thought.txt
+    photo.png                    # optional; linked as ![caption](photo.png) or ![[photo.png]]
+    attachments/                 # images downloaded from a public Evernote or UpNote note
     phase1.json              # uncertain marks + YouTube descriptors
     phase1-suggestions.md    # optional: shorthand, enrichment, whole-idea, and per-line Suggest notes
     phase1-regions.md        # optional: your Split / Merge corrections to note boundaries
@@ -95,12 +109,13 @@ If the AI’s boundary is wrong:
 
 - **Split** — then choose the line where the second idea starts
 - **Merge up** or **Merge down** — those notes are one idea
+- **Delete** — that idea leaves every phase. Undo on the page brings it back. After a reload, **Restore** under Deleted puts it back in Phase 1. Phase 2 and Phase 3 have **Delete** on each card, and in Notebook. Deleting a snapshot card removes it from that snapshot only.
 
 Colors are reassigned automatically. The edit is saved to `phase1-regions.md`. The skill reads that file before it groups notes and does not throw the correction away. Putting the boundary back removes the saved edit.
 
 ### Phase 2 — sort notes and review tags
 
-When Phase 1 is done, the skill groups notes into **Scattered**, **Reference**, and **Articles** (stored in `phase2.json` as `tasks`, `reference`, and `articleCandidates`). Every source line is accounted for in a blame map so details do not disappear silently.
+When Phase 1 is done, the skill groups notes into **Scattered**, **Reference**, and **Articles** (stored in `phase2.json` as `tasks`, `reference`, and `articleCandidates`). Every card is written for you to read later: a short heading (added when the note had none) and a sentence or short paragraph that says what the idea is, then your original lines. Every source line is accounted for in a blame map so details do not disappear silently.
 
 Visit the web app and check that things are properly organized. In the app you can:
 
@@ -151,7 +166,7 @@ Anyone who captures thoughts in bursts and organizes later—or never quite gets
 
 Open a batch in the app and each note is its own colored region, numbered with the source line range. Here `inputs/sort-scattered` is 54 notes, drawn from divider lines such as `---`. The skill then decides which of those are a new idea and which are a section of the same article. The counts along the top — Files, Uncertain, YouTube, Links, Blocked — open a list; click a row and the page jumps to that line. The strip on the right is the whole file, one band per note, so a long dump stays visible at once. Click the colored edge to suggest a change for that whole idea, or click a line to suggest a change for that line’s text; both are saved for the next phase. **Suggest** also sits on a shorthand flag and on a green YouTube or link line.
 
-If the boundary is wrong, **Split** a region that is really two ideas, or **Merge up** / **Merge down** when two regions are the same idea. Colors are reassigned so two notes in a row never share one. **Projects** in the header switches to another folder and restores that project’s phase. Snapshots, saved from Phase 3, stay available from either project.
+If the boundary is wrong, **Split** a region that is really two ideas, or **Merge up** / **Merge down** when two regions are the same idea. **Delete** removes an idea you do not want; **Restore** brings it back in Phase 1. Colors are reassigned so two notes in a row never share one. **Projects** in the header switches to another folder and restores that project’s phase. Snapshots, saved from Phase 3, stay available from either project.
 
 ![Phase 1: numbered colored notes, review counts, and a map of every note in the file](assets/screenshots/new-features-show-distinct-ideas-and-map.png)
 

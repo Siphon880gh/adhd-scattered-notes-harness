@@ -300,6 +300,22 @@ code {
   margin-top: 1rem;
 }
 
+.idea-confirm {
+  z-index: 110;
+}
+
+.idea-confirm__preview {
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid var(--danger, #e06c75);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.idea-confirm__preview[hidden] {
+  display: none;
+}
+
 .app-header__meta-sep {
   margin: 0 0.15rem;
   opacity: 0.55;
@@ -1225,6 +1241,72 @@ body.is-phase-preview .item-card__actions {
   font-size: 0.82rem;
 }
 
+.deleted-ideas {
+  margin-top: 1.25rem;
+  padding: 0.75rem 0.85rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.deleted-ideas h2 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.deleted-ideas__list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.deleted-ideas__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+}
+
+.deleted-ideas__range {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.deleted-ideas__preview {
+  flex: 1;
+  min-width: 8rem;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.deleted-ideas__restore {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+}
+
+.deleted-ideas__restore:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.deleted-ideas__restore:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .thought {
   position: relative;
   scroll-margin-top: calc(var(--app-header-height) + var(--bucket-counts-height) + 0.45rem);
@@ -1338,6 +1420,8 @@ body.is-phase-preview .item-card__actions {
   margin-left: auto;
   display: flex;
   flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.3rem;
 }
 
@@ -1369,6 +1453,11 @@ body.is-phase-preview .item-card__actions {
   color: hsl(var(--thought-hue) 72% 74%);
 }
 
+.thought__action--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .thought-row__split {
   display: none;
   width: calc(100% - 1.3rem);
@@ -1396,7 +1485,7 @@ body.is-phase-preview .item-card__actions {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 11px;
+  height: 14px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -1412,17 +1501,26 @@ body.is-phase-preview .item-card__actions {
 
 .thought__resize::before {
   content: "";
-  width: 2.5rem;
-  height: 3px;
-  border-radius: 2px;
-  background: hsl(var(--thought-hue) 32% 42% / 0.85);
+  width: 6.5rem;
+  height: 5px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 0.7rem 50%, hsl(var(--thought-hue) 30% 16%) 1.15px, transparent 1.5px),
+    radial-gradient(circle at 50% 50%, hsl(var(--thought-hue) 30% 16%) 1.15px, transparent 1.5px),
+    radial-gradient(circle at calc(100% - 0.7rem) 50%, hsl(var(--thought-hue) 30% 16%) 1.15px, transparent 1.5px),
+    hsl(var(--thought-hue) 68% 58%);
+  box-shadow: 0 0 0 1px hsl(var(--thought-hue) 40% 16% / 0.7);
 }
 
 .thought__resize:hover::before,
 .thought__resize:focus-visible::before,
 .thought.is-resizing .thought__resize::before {
-  width: 3.6rem;
-  background: hsl(var(--thought-hue) 72% 68%);
+  width: 8.5rem;
+  background:
+    radial-gradient(circle at 0.7rem 50%, hsl(var(--thought-hue) 30% 14%) 1.15px, transparent 1.5px),
+    radial-gradient(circle at 50% 50%, hsl(var(--thought-hue) 30% 14%) 1.15px, transparent 1.5px),
+    radial-gradient(circle at calc(100% - 0.7rem) 50%, hsl(var(--thought-hue) 30% 14%) 1.15px, transparent 1.5px),
+    hsl(var(--thought-hue) 82% 68%);
 }
 
 .thought__resize:focus-visible {
@@ -1751,6 +1849,136 @@ a.note-link {
 a.note-link:hover,
 a.note-link:focus-visible {
   color: #d6e8ff;
+}
+
+.note-figure {
+  display: inline-block;
+  vertical-align: top;
+  max-width: min(100%, 34rem);
+  margin: 0.35rem 0;
+  white-space: normal;
+}
+
+.note-image-btn {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.note-image-btn:hover,
+.note-image-btn:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.note-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 34rem);
+  max-height: min(38vh, 18rem);
+  object-fit: contain;
+}
+
+.note-image-caption {
+  display: block;
+  margin-top: 0.28rem;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-lightbox[hidden] {
+  display: none !important;
+}
+
+.image-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.86);
+}
+
+.image-lightbox__frame {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  width: min(94vw, 72rem);
+  max-height: 94vh;
+  outline: none;
+}
+
+.image-lightbox__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.image-lightbox__btn,
+.image-lightbox__close {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.image-lightbox__btn {
+  padding: 0.35rem 0.7rem;
+}
+
+.image-lightbox__close {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.image-lightbox__btn:hover,
+.image-lightbox__btn:focus-visible,
+.image-lightbox__close:hover,
+.image-lightbox__close:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.image-lightbox__stage {
+  overflow: auto;
+  max-width: 94vw;
+  max-height: min(82vh, 52rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-lightbox__img {
+  display: block;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 
 .line__toolbar {
@@ -3083,6 +3311,7 @@ a.note-link:focus-visible {
 
 .item-card__title-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.65rem;
   margin-bottom: 0.35rem;
@@ -3148,6 +3377,21 @@ a.note-link:focus-visible {
 .item-card__body-text {
   margin: 0.25rem 0;
   color: var(--ink-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.item-card__lead,
+.note-lead {
+  margin: 0.15rem 0 0.55rem;
+  color: var(--ink);
+  font-size: 0.98rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note-rest {
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -3327,8 +3571,36 @@ a.note-link:focus-visible {
   color: var(--added);
 }
 
+.item-card__delete,
+.notebook-note__delete {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.item-card__delete:hover,
+.notebook-note__delete:hover {
+  border-color: var(--danger);
+  background: rgba(240, 113, 120, 0.12);
+  color: var(--danger);
+}
+
 .item-card.is-rearranging .item-card__copy,
 .section-block.is-rearranging .item-card__copy,
+.item-card.is-rearranging .item-card__delete,
+.section-block.is-rearranging .item-card__delete,
 .item-card.is-rearranging .item-card__more,
 .section-block.is-rearranging .item-card__more {
   pointer-events: none;
@@ -4675,7 +4947,8 @@ body:has(.organized.is-notebook-mode) .bucket-counts {
   font-family: var(--mono);
 }
 
-.notebook.is-rearranging .notebook-note__copy {
+.notebook.is-rearranging .notebook-note__copy,
+.notebook.is-rearranging .notebook-note__delete {
   display: none;
 }
 

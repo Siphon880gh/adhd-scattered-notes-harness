@@ -54,9 +54,9 @@ if (
 ) {
     header('Content-Type: application/json; charset=utf-8');
 
-    if (!$folderExists || ($phase !== 2 && $phase !== 3)) {
+    if (!$folderExists || $phase < 1 || $phase > 3) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Organized editing is only available in Phase 2 or 3.']);
+        echo json_encode(['ok' => false, 'error' => 'Organized editing needs a selected project.']);
         exit;
     }
 
@@ -70,7 +70,12 @@ if (
 
     $phase2Path = $dir . '/phase2.json';
     $existing = load_json_file($phase2Path) ?? [];
+    $beforeOrganized = normalize_organized(
+        is_array($existing['organized'] ?? null) ? $existing['organized'] : []
+    );
     $existing['organized'] = normalize_organized($payload['organized']);
+    $existingBlame = is_array($existing['blame'] ?? null) ? $existing['blame'] : [];
+    $existing['blame'] = persist_removed_ideas($dir, $beforeOrganized, $existing['organized'], $existingBlame);
     $availableTags = collect_organized_tags($existing['organized']);
     if (array_key_exists('filterLayout', $payload)) {
         $existing['filterLayout'] = normalize_filter_layout($payload['filterLayout'], $availableTags);
@@ -250,9 +255,9 @@ if (
 ) {
     header('Content-Type: application/json; charset=utf-8');
 
-    if (!$folderExists || $phase !== 1) {
+    if (!$folderExists || $phase < 1 || $phase > 3) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Phase 1 region edits are only available in Phase 1.']);
+        echo json_encode(['ok' => false, 'error' => 'Note region edits need a selected project.']);
         exit;
     }
 
@@ -280,9 +285,29 @@ if (
     }
 
     $lines = lines_for_file($dir, $file, load_json_file($dir . '/phase1.json'));
-    $overrides = phase1_region_overrides_from_starts($lines, $starts);
     $regions = load_phase1_regions($dir);
-    if ($overrides['splits'] === [] && $overrides['joins'] === []) {
+    $validLines = [];
+    foreach ($lines as $i => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $n = (int) ($line['n'] ?? ($i + 1));
+        if ($n > 0) {
+            $validLines[$n] = true;
+        }
+    }
+    if (array_key_exists('deletes', $payload) && is_array($payload['deletes'])) {
+        $deleteList = [];
+        foreach (phase1_region_line_list($payload['deletes']) as $n) {
+            if (isset($validLines[$n])) {
+                $deleteList[] = $n;
+            }
+        }
+    } else {
+        $deleteList = $regions[$file]['deletes'] ?? [];
+    }
+    $overrides = phase1_region_overrides_from_starts($lines, $starts, $deleteList);
+    if ($overrides['splits'] === [] && $overrides['joins'] === [] && $overrides['deletes'] === []) {
         unset($regions[$file]);
     } else {
         $regions[$file] = $overrides;
@@ -299,6 +324,71 @@ if (
         'edited' => $overrides['splits'] !== [] || $overrides['joins'] !== [],
         'splits' => $overrides['splits'],
         'joins' => $overrides['joins'],
+        'deletes' => $overrides['deletes'],
+    ]);
+    exit;
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_GET['action'])
+    && (string) $_GET['action'] === 'restore-phase1-lines'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$folderExists || $phase < 1 || $phase > 3) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Restoring an idea needs a selected project.']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($payload)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Expected JSON body with file and lines.']);
+        exit;
+    }
+
+    $file = basename(str_replace('\\', '/', (string) ($payload['file'] ?? '')));
+    $noteFilesForSave = list_note_files($dir);
+    if ($file === '' || !in_array($file, $noteFilesForSave, true)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Unknown note file.']);
+        exit;
+    }
+
+    $restoreLines = array_flip(phase1_region_line_list($payload['lines'] ?? []));
+    $regions = load_phase1_regions($dir);
+    $current = $regions[$file]['deletes'] ?? [];
+    $kept = [];
+    foreach ($current as $n) {
+        $n = (int) $n;
+        if ($n > 0 && !isset($restoreLines[$n])) {
+            $kept[] = $n;
+        }
+    }
+    if (!isset($regions[$file]) || !is_array($regions[$file])) {
+        $regions[$file] = ['splits' => [], 'joins' => [], 'deletes' => []];
+    }
+    $regions[$file]['deletes'] = $kept;
+    if (
+        ($regions[$file]['splits'] ?? []) === []
+        && ($regions[$file]['joins'] ?? []) === []
+        && $kept === []
+    ) {
+        unset($regions[$file]);
+    }
+    if (!save_phase1_regions($dir, $regions)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not write phase1-regions.md.']);
+        exit;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'file' => $file,
+        'deletes' => $kept,
     ]);
     exit;
 }
@@ -507,6 +597,12 @@ if ($viewingSnapshot !== null) {
     }
     $folderExists = true;
 }
+
+$imageFolder = $folder;
+if ($viewingSnapshot !== null) {
+    $imageFolder = basename(str_replace('\\', '/', (string) ($viewingSnapshot['sourceFolder'] ?? '')));
+}
+note_image_root(note_image_root_for_folder($imageFolder));
 
 $isPhasePreview = false;
 if ($viewingSnapshot === null && $folderExists && isset($_GET['preview'])) {
@@ -725,15 +821,8 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
         $id = (string) ($item['id'] ?? '');
         $title = (string) ($item['title'] ?? ($id !== '' ? $id : 'Untitled'));
         $body = (string) ($item['body'] ?? $item['why'] ?? '');
-        $bodyLines = $body === '' ? [] : preg_split("/\r\n|\r|\n/", $body);
-        if (!is_array($bodyLines)) {
-            $bodyLines = [$body];
-        }
-        $previewLimit = 3;
-        $needsTruncate = count($bodyLines) > $previewLimit;
-        $previewBody = $needsTruncate
-            ? implode("\n", array_slice($bodyLines, 0, $previewLimit))
-            : $body;
+        $reading = note_reading_parts($body);
+        $needsTruncate = $reading['truncate'];
         $sources = $item['sources'] ?? [];
         if (!is_array($sources)) {
             $sources = [];
@@ -764,6 +853,7 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
         echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
         echo '<span>Copy</span>';
         echo '</button>';
+        echo '<button type="button" class="item-card__delete" data-delete-item title="Delete this idea" aria-label="Delete this idea">Delete</button>';
         echo '<div class="item-card__more" data-move-wrap>';
         echo '<button type="button" class="item-card__more-toggle" data-move-toggle aria-expanded="false" aria-haspopup="menu" title="More actions" aria-label="More actions">';
         echo '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>';
@@ -781,7 +871,12 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
         echo '</div>';
         if ($body !== '') {
             echo '<div class="item-card__body">';
-            echo '<p class="item-card__body-text">' . linkify_note($previewBody) . '</p>';
+            if ($reading['lead'] !== '') {
+                echo '<p class="item-card__lead">' . linkify_note($reading['lead']) . '</p>';
+            }
+            if ($reading['previewRest'] !== '') {
+                echo '<p class="item-card__body-text">' . linkify_note($reading['previewRest']) . '</p>';
+            }
             if ($needsTruncate) {
                 echo '<button type="button" class="item-card__read-more" data-read-more>Read more</button>';
             }
@@ -842,7 +937,7 @@ $isSnapshotView = $viewingSnapshot !== null;
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= e(asset_url('assets/app.css')) ?>">
 </head>
-<body class="<?= trim(($isSnapshotView ? 'is-snapshot-view' : '') . ($isPhasePreview ? ' is-phase-preview' : '')) ?>"<?php if ($isPhasePreview): ?> data-phase-preview="1" data-live-phase="<?= (int) $livePhase ?>"<?php endif; ?>>
+<body class="<?= trim(($isSnapshotView ? 'is-snapshot-view' : '') . ($isPhasePreview ? ' is-phase-preview' : '')) ?>" data-input-folder="<?= e(note_image_root() !== '' ? $imageFolder : '') ?>"<?php if ($isPhasePreview): ?> data-phase-preview="1" data-live-phase="<?= (int) $livePhase ?>"<?php endif; ?>>
 <header class="app-header">
     <a href="index.php" class="app-header__brand">Scattered Notes</a>
     <div class="app-header__meta">
@@ -1004,6 +1099,18 @@ $isSnapshotView = $viewingSnapshot !== null;
         </div>
     </form>
 </div>
+<div class="snapshot-dialog idea-confirm" data-idea-confirm role="dialog" aria-modal="true" aria-labelledby="idea-confirm-title" hidden>
+    <div class="snapshot-dialog__backdrop" data-idea-confirm-cancel></div>
+    <div class="snapshot-dialog__card">
+        <h2 id="idea-confirm-title" data-idea-confirm-title>Delete this idea?</h2>
+        <p class="idea-confirm__preview" data-idea-confirm-preview hidden></p>
+        <p data-idea-confirm-message></p>
+        <div class="snapshot-dialog__actions">
+            <button type="button" class="app-header__btn" data-idea-confirm-cancel>Cancel</button>
+            <button type="button" class="app-header__btn app-header__btn--danger" data-idea-confirm-ok>Delete</button>
+        </div>
+    </div>
+</div>
 
 <?php if ($snapshotMissing): ?>
 <aside class="banner banner--warn">
@@ -1041,6 +1148,10 @@ $isSnapshotView = $viewingSnapshot !== null;
             <li>
                 Dump scattered notes as <code>.md</code> and/or <code>.txt</code> files into a folder under <code>inputs/</code>, e.g. <code>inputs/linux-dump/</code>.
                 One thought per file or many thoughts in one file — both are fine. A divider (<code>--</code>, <code>---</code>, <code>&lt;hr&gt;</code>, <code>***</code>, or two blank lines) marks a possible new idea; the skill decides whether it is a new idea or a section of the same article.
+                A photo can sit in that same folder. Link it with markdown <code>![caption](photo.png)</code> or Obsidian <code>![[photo.png]]</code>.
+            </li>
+            <li>
+                Or skip the files. In Evernote, open the note, choose Share, set <strong>Anyone with the link can view</strong>, and copy the link. In UpNote, open the note, choose Share, then <strong>Copy Link</strong> (or <strong>Share Link</strong> on a phone). Paste that public https URL in the skill chat. The skill saves the note and downloads its images into <code>attachments/</code> inside the inputs folder.
             </li>
             <li>
                 In Cursor or Claude Code, run the skill at
@@ -1107,6 +1218,7 @@ $isSnapshotView = $viewingSnapshot !== null;
         <p>
             Uncertain symbols and shorthand are highlighted. YouTube and fetched links show a green added descriptor.
             Blocked URLs open a paste panel — visit the page in your browser, describe what you need, and paste relevant text.
+            A photo linked with markdown or Obsidian syntax shows in the note. Click it for a larger view you can enlarge.
             Reload this page after the skill updates <code>phase1.json</code>.
         </p>
         <ul>
@@ -1118,6 +1230,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 or only a section of the same article. Files with no divider are split on blank lines.
                 The map on the right is the whole file.
                 If a boundary is wrong, use <strong>Split</strong> inside a note or <strong>Merge up</strong> / <strong>Merge down</strong> on the note header.
+                <strong>Delete</strong> removes that idea from every phase. The original note file stays. Undo on this page brings it back; after a reload, use <strong>Restore</strong> under Deleted.
                 Drag the top edge of a note, except the first one, or the bottom edge, except the last.
                 When you let go: if you dragged back into the note, choose to split those lines into a new idea or let the neighbor take them; if you dragged into the neighbor, take those lines into this note.
                 Colors update on their own, and two notes in a row never share a color.
@@ -1253,6 +1366,8 @@ $isSnapshotView = $viewingSnapshot !== null;
                 $thoughtCount = count($phase1Thoughts);
                 $thoughtNoun = $thoughtCount === 1 ? 'note' : 'notes';
                 $regionEdited = ($regionOverrides['splits'] ?? []) !== [] || ($regionOverrides['joins'] ?? []) !== [];
+                $deletedIdeas = phase1_deleted_ideas($lines, $regionOverrides['deletes'] ?? []);
+                $deletedIdeaCount = count($deletedIdeas);
                 if ($thoughtCount === 0) {
                     $thoughtSummary = 'No note text in this file yet.';
                 } elseif ($phase1ThoughtMode === 'dividers' || $phase1ThoughtMode === 'dashes') {
@@ -1263,9 +1378,12 @@ $isSnapshotView = $viewingSnapshot !== null;
                 if ($regionEdited && $thoughtCount > 0) {
                     $thoughtSummary .= ' Your boundary edits are saved.';
                 }
+                if ($deletedIdeaCount > 0) {
+                    $thoughtSummary .= ' Deleted ideas stay out of every phase.';
+                }
                 ?>
                 <h1 class="panel-title" id="p1-file"><?= e($activeFile) ?></h1>
-                <p class="thought-summary" data-thought-summary data-thought-mode="<?= e($phase1ThoughtMode) ?>" data-thought-edited="<?= $regionEdited ? '1' : '0' ?>"><?= e($thoughtSummary) ?> The map is this whole file.</p>
+                <p class="thought-summary" data-thought-summary data-thought-mode="<?= e($phase1ThoughtMode) ?>" data-thought-edited="<?= $regionEdited ? '1' : '0' ?>" data-thought-deleted="<?= (int) $deletedIdeaCount ?>"><?= e($thoughtSummary) ?> The map is this whole file.</p>
                 <p class="thought-hint">Click the colored edge to suggest a change for that whole idea. Click a line to suggest a change for that line’s text. Both are saved for the next phase.</p>
                 <?php if ($phase1 === null): ?>
                     <p class="muted">
@@ -1280,7 +1398,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                         (string) json_encode($phase1Suggestions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                     )
                 ?></script>
-                <div class="line-view" data-phase1-lines data-phase1-file="<?= e($activeFile) ?>">
+                <div class="line-view" data-phase1-lines data-phase1-file="<?= e($activeFile) ?>" data-phase1-deletes="<?= e((string) json_encode(array_values($regionOverrides['deletes'] ?? []), JSON_UNESCAPED_UNICODE)) ?>">
                     <?php
                     $thoughtOpen = 0;
                     foreach ($lines as $lineIndex => $line):
@@ -1338,6 +1456,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                                 echo '<button type="button" class="thought__action" data-thought-split>Split</button>';
                                 echo '<button type="button" class="thought__action" data-thought-merge="prev">Merge up</button>';
                                 echo '<button type="button" class="thought__action" data-thought-merge="next">Merge down</button>';
+                                echo '<button type="button" class="thought__action thought__action--danger" data-thought-delete>Delete</button>';
                                 echo '</div>';
                                 echo '</header>';
                             }
@@ -1532,6 +1651,31 @@ $isSnapshotView = $viewingSnapshot !== null;
                     }
                     ?>
                 </div>
+                <?php if ($deletedIdeas !== []): ?>
+                    <section class="deleted-ideas" data-deleted-ideas aria-label="Deleted ideas">
+                        <h2>Deleted</h2>
+                        <p class="muted">These stay out of every phase. The original file still has the lines. Restore shows the idea here again. A card deleted in Phase 2 or 3 stays deleted until chat organizes it.</p>
+                        <ul class="deleted-ideas__list">
+                            <?php foreach ($deletedIdeas as $deletedIdea):
+                                $deletedRange = (int) $deletedIdea['start'] === (int) $deletedIdea['end']
+                                    ? 'line ' . (int) $deletedIdea['start']
+                                    : 'lines ' . (int) $deletedIdea['start'] . '–' . (int) $deletedIdea['end'];
+                                $deletedPreview = (string) ($deletedIdea['preview'] ?? '');
+                                ?>
+                                <li class="deleted-ideas__item">
+                                    <span class="deleted-ideas__range"><?= e($deletedRange) ?></span>
+                                    <span class="deleted-ideas__preview"><?= e($deletedPreview !== '' ? $deletedPreview : 'Deleted idea') ?></span>
+                                    <button
+                                        type="button"
+                                        class="deleted-ideas__restore"
+                                        data-restore-lines="<?= e(implode(',', $deletedIdea['lines'])) ?>"
+                                        data-restore-file="<?= e($activeFile) ?>"
+                                    >Restore</button>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </section>
+                <?php endif; ?>
             <?php endif; ?>
         </main>
         <?php if ($phase1Thoughts !== []): ?>
@@ -1578,9 +1722,12 @@ $isSnapshotView = $viewingSnapshot !== null;
     $organized = $phase2 !== null
         ? normalize_organized(is_array($phase2['organized'] ?? null) ? $phase2['organized'] : [])
         : normalize_organized(null);
-    $tasks = $organized['tasks'];
-    $reference = $organized['reference'];
-    $articles = $organized['articleCandidates'];
+    $visibleOrganized = $isSnapshotView
+        ? $organized
+        : organized_hiding_deleted($organized, $phase1Regions);
+    $tasks = $visibleOrganized['tasks'];
+    $reference = $visibleOrganized['reference'];
+    $articles = $visibleOrganized['articleCandidates'];
     render_count_bar([
         ['label' => 'Scattered Notes', 'count' => count($tasks), 'key' => 'tasks'],
         ['label' => 'Reference', 'count' => count($reference), 'key' => 'reference'],
@@ -1602,6 +1749,7 @@ $isSnapshotView = $viewingSnapshot !== null;
         </p>
         <ul>
             <li>Saved file: <code>snapshots/<?= e((string) $viewingSnapshot['id']) ?>.json</code><?php if ((string) ($viewingSnapshot['createdAt'] ?? '') !== ''): ?> · <?= e((string) $viewingSnapshot['createdAt']) ?><?php endif; ?></li>
+            <li><strong>Delete</strong> removes an idea from this snapshot only.</li>
             <li><a href="index.php">Exit snapshot</a> to resume the live phase.</li>
         </ul>
     </aside>
@@ -1615,12 +1763,12 @@ $isSnapshotView = $viewingSnapshot !== null;
             Filter by tag and copy the finished notes into your own app.
             Suggest and green-check are off.
             Use <strong>Panels</strong> to filter and Copy, or switch to <strong>Notebook</strong> for an UpNote-style sidebar of filter groups → notebooks.
-            You can still tweak tags, move items, and rearrange. Use the hamburger for original notes with per-line accounting.
+            You can still tweak tags, move items, rearrange, and <strong>Delete</strong> an idea. Use the hamburger for original notes with per-line accounting. To bring a deleted idea back, open Phase 1 and choose <strong>Restore</strong>.
             <strong>Save snapshot as</strong> stores this Phase 3 under <code>snapshots/</code> so you can reopen it anytime without changing your live phase.
         </p>
         <ul>
             <li>Filter + Copy (Panels) or open a notebook and Copy compiled notes — paste into your own notes app.</li>
-            <li>Tag/move edits still save into <code>phase2.json</code>. Return to chat only to refine tags if needed.</li>
+            <li>Tag, move, and delete edits still save. Return to chat only to refine tags if needed. Open Phase 1 and choose <strong>Restore</strong> to bring a deleted idea back.</li>
         </ul>
     </aside>
     <?php else: ?>
@@ -1632,11 +1780,12 @@ $isSnapshotView = $viewingSnapshot !== null;
         <p>
             Review whether the AI classified each note correctly as a task or not:
             open <strong>Suggest</strong> and write e.g. “not a task — make this Reference” or “this should be a task”.
-            You can also move the card between Scattered / Reference / Articles yourself.
+            You can also move the card between Scattered / Reference / Articles, or <strong>Delete</strong> an idea so it stays out of every phase. Open Phase 1 and choose <strong>Restore</strong> to bring one back.
         </p>
         <p>
             Also check that it did not drop lines unnecessarily, and that each card reads the way you meant.
-            Want a note changed (different title, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on a section header for whole-panel feedback (tagging, heading style, ordering) — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
+            Each card opens with a heading and a sentence that says what the idea is. Your original lines follow.
+            Want a note changed (different title, that opening sentence, keep a detail, merge, wrong bucket)? Open <strong>Suggest</strong> on that card — or on a section header for whole-panel feedback (tagging, heading style, ordering) — and write what should change. Saved to <code>phase2-suggestions.md</code> for the next AI pass.
             Green-check items as you review them (saved into <code>phase2.json</code>).
             Tags are already on each card and in the Filter bar. Add, remove, or rename one on the right if it is wrong.
             When this looks right, Phase 3 turns off Suggest and green-check so you can filter by tag and copy the notes into your own app.
@@ -1667,7 +1816,7 @@ $isSnapshotView = $viewingSnapshot !== null;
                 <code>phase2.json</code> is missing. Return to Cursor / Claude Code and ask the skill to run Phase 2.
             </p>
         <?php else:
-            $allTags = collect_organized_tags($organized);
+            $allTags = collect_organized_tags($visibleOrganized);
             $filterLayout = normalize_filter_layout(
                 is_array($phase2['filterLayout'] ?? null) ? $phase2['filterLayout'] : [],
                 $allTags
@@ -1807,6 +1956,27 @@ $isSnapshotView = $viewingSnapshot !== null;
                 }
                 ?>
             </div>
+            <?php
+            $phase1DeleteMap = [];
+            if (!$isSnapshotView) {
+                foreach ($phase1Regions as $deleteFile => $deleteRow) {
+                    if (!is_array($deleteRow)) {
+                        continue;
+                    }
+                    $deleteLines = $deleteRow['deletes'] ?? [];
+                    if (is_array($deleteLines) && $deleteLines !== []) {
+                        $phase1DeleteMap[(string) $deleteFile] = array_values($deleteLines);
+                    }
+                }
+            }
+            ?>
+            <script type="application/json" id="phase1-deletes-data"><?=
+                str_replace(
+                    '</',
+                    '<\/',
+                    (string) json_encode($phase1DeleteMap === [] ? new stdClass() : $phase1DeleteMap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                )
+            ?></script>
             <script type="application/json" id="phase2-organized-data"><?=
                 str_replace(
                     '</',
@@ -2139,6 +2309,21 @@ $isSnapshotView = $viewingSnapshot !== null;
 </footer>
 
 <div class="app-toast" data-app-toast hidden role="status" aria-live="polite"></div>
+
+<div class="image-lightbox" data-image-lightbox hidden>
+    <div class="image-lightbox__backdrop" data-image-lightbox-close></div>
+    <div class="image-lightbox__frame" role="dialog" aria-modal="true" aria-label="Photo" tabindex="-1">
+        <div class="image-lightbox__toolbar">
+            <button type="button" class="image-lightbox__btn" data-image-zoom="out">Smaller</button>
+            <button type="button" class="image-lightbox__btn" data-image-zoom="reset">Fit</button>
+            <button type="button" class="image-lightbox__btn" data-image-zoom="in">Enlarge</button>
+            <button type="button" class="image-lightbox__close" data-image-lightbox-close aria-label="Close photo">×</button>
+        </div>
+        <div class="image-lightbox__stage" data-image-lightbox-stage>
+            <img class="image-lightbox__img" data-image-lightbox-img alt="">
+        </div>
+    </div>
+</div>
 
 <script src="<?= e(asset_url('assets/app.js')) ?>"></script>
 </body>

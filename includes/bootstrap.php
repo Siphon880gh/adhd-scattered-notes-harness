@@ -12,12 +12,45 @@ function e(?string $value): string
 }
 
 /**
- * Note text with http(s) URLs and markdown links as anchors that open in a new window.
+ * Folder whose images a note may embed. Empty until index.php sets it.
+ * Pass a string to set; pass nothing to read.
+ */
+function note_image_root(?string $set = null): string
+{
+    static $root = '';
+    if ($set !== null) {
+        $root = $set;
+    }
+
+    return $root;
+}
+
+/** `inputs/{folder}` when that project directory exists. */
+function note_image_root_for_folder(string $folder): string
+{
+    $folder = basename(str_replace('\\', '/', trim($folder)));
+    if ($folder === '' || $folder === '.' || $folder === '..') {
+        return '';
+    }
+    if (!is_dir(input_dir($folder))) {
+        return '';
+    }
+
+    return 'inputs/' . $folder;
+}
+
+/**
+ * Note text with links and photos.
+ * Markdown images `![alt](file.png)` and Obsidian embeds `![[file.png]]`
+ * become pictures. http(s) URLs and markdown links stay anchors.
  * The rest of the text stays escaped.
  */
-function linkify_note(string $text): string
+function linkify_note(string $text, ?string $imageRoot = null): string
 {
-    $pattern = '/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(?<![\w\/])(https?:\/\/[^\s<]+)/u';
+    if ($imageRoot === null) {
+        $imageRoot = note_image_root();
+    }
+    $pattern = '/!\[\[([^\]\n|#]+)(?:#[^\]\n|]+)?(?:\|([^\]\n]*))?\]\]|!\[([^\]\n]*)\]\(([^)\n]+)\)|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(?<![\w\/])(https?:\/\/[^\s<]+)/u';
     if (!preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE)) {
         return e($text);
     }
@@ -33,10 +66,28 @@ function linkify_note(string $text): string
             continue;
         }
         $end = $start + strlen($raw);
-        $isMarkdown = ($matches[2][$i][0] ?? '') !== '';
+        $obsidianPath = (string) ($matches[1][$i][0] ?? '');
+        $markdownImageSrc = (string) ($matches[4][$i][0] ?? '');
+        if ($obsidianPath !== '' || $markdownImageSrc !== '') {
+            $srcRaw = $obsidianPath !== '' ? $obsidianPath : $markdownImageSrc;
+            $altRaw = $obsidianPath !== ''
+                ? (string) ($matches[2][$i][0] ?? '')
+                : (string) ($matches[3][$i][0] ?? '');
+            $alt = note_image_caption($altRaw);
+            $src = note_image_src($srcRaw, $imageRoot);
+            $out .= e(substr($text, $offset, $start - $offset));
+            if ($src === '') {
+                $out .= e($raw);
+            } else {
+                $out .= note_image_html($src, $alt);
+            }
+            $offset = $end;
+            continue;
+        }
+        $isMarkdown = ($matches[6][$i][0] ?? '') !== '';
         if ($isMarkdown) {
-            $url = (string) $matches[2][$i][0];
-            $label = linkify_note_label((string) $matches[1][$i][0]);
+            $url = (string) $matches[6][$i][0];
+            $label = linkify_note_label((string) $matches[5][$i][0]);
             $mark = '';
             if ($start >= 2 && substr($text, $start - 2, 2) === '**' && substr($text, $end, 2) === '**') {
                 $mark = '**';
@@ -48,7 +99,7 @@ function linkify_note(string $text): string
                 $end += 2;
             }
         } else {
-            $url = (string) $matches[3][$i][0];
+            $url = (string) $matches[7][$i][0];
             [$url, $tail] = linkify_note_trim_url($url);
             $end = $start + strlen($url);
             $rawTail = substr($text, $end, strlen($tail));
@@ -64,7 +115,7 @@ function linkify_note(string $text): string
         } else {
             $out .= '<a class="note-link" href="' . e($safe) . '" target="_blank" rel="noopener noreferrer">' . e($label !== '' ? $label : $safe) . '</a>';
         }
-        if (!$isMarkdown && isset($rawTail) && $rawTail !== '') {
+        if (!$isMarkdown && $rawTail !== '') {
             $out .= e($rawTail);
             $end += strlen($rawTail);
         }
@@ -73,6 +124,129 @@ function linkify_note(string $text): string
     $out .= e(substr($text, $offset));
 
     return $out;
+}
+
+/** Obsidian `|640` and `|640x480` are size hints, not captions. */
+function note_image_caption(string $alt): string
+{
+    $alt = trim($alt);
+    if ($alt === '' || preg_match('/^\d+(?:x\d+)?$/i', $alt) === 1) {
+        return '';
+    }
+
+    return linkify_note_label($alt);
+}
+
+function note_image_html(string $src, string $alt): string
+{
+    $label = $alt !== '' ? $alt : 'photo';
+
+    $html = '<span class="note-figure">';
+    $html .= '<button type="button" class="note-image-btn" data-note-image data-full-src="' . e($src) . '" aria-label="' . e('View larger: ' . $label) . '">';
+    $html .= '<img class="note-image" src="' . e($src) . '" alt="' . e($alt !== '' ? $alt : 'Photo') . '">';
+    $html .= '</button>';
+    if ($alt !== '') {
+        $html .= '<span class="note-image-caption">' . e($alt) . '</span>';
+    }
+    $html .= '</span>';
+
+    return $html;
+}
+
+/**
+ * Public http(s) image, or a relative file under the project folder.
+ * Rejects other schemes and any path that leaves that folder.
+ */
+function note_image_src(string $raw, string $imageRoot): string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return '';
+    }
+    if ($raw[0] === '<' && substr($raw, -1) === '>') {
+        $raw = trim(substr($raw, 1, -1));
+    }
+    if (preg_match('/^(.*?)\s+(["\']).*?\2\s*$/u', $raw, $title) === 1) {
+        $raw = trim((string) $title[1]);
+    }
+    if (preg_match('#^https?://#i', $raw) === 1) {
+        return linkify_note_url($raw);
+    }
+
+    $raw = str_replace('\\', '/', $raw);
+    if (strpos($raw, "\0") !== false || preg_match('#(^|/)\.\.(/|$)#', $raw) === 1) {
+        return '';
+    }
+    if ($raw[0] === '/' || preg_match('#^[a-zA-Z][a-zA-Z0-9+.-]*:#', $raw) === 1) {
+        return '';
+    }
+    $raw = preg_replace('#^\./+#', '', $raw) ?? $raw;
+    if (preg_match('/\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i', $raw) !== 1) {
+        return '';
+    }
+
+    $segments = note_image_path_segments($raw);
+    $rootSegments = note_image_path_segments(trim(str_replace('\\', '/', $imageRoot), '/'));
+    if ($segments === [] || $rootSegments === []) {
+        return '';
+    }
+
+    return implode('/', $rootSegments) . '/' . implode('/', $segments);
+}
+
+/**
+ * @return list<string>
+ */
+function note_image_path_segments(string $path): array
+{
+    if ($path === '') {
+        return [];
+    }
+    $segments = [];
+    foreach (explode('/', $path) as $segment) {
+        if ($segment === '' || $segment === '.' || $segment === '..') {
+            return [];
+        }
+        $segments[] = rawurlencode($segment);
+    }
+
+    return $segments;
+}
+
+/**
+ * Opening paragraph is the sentence a person reads first when a blank line follows it.
+ *
+ * @return array{lead: string, previewRest: string, truncate: bool}
+ */
+function note_reading_parts(string $body): array
+{
+    $body = str_replace(["\r\n", "\r"], "\n", $body);
+    $lead = '';
+    $rest = trim($body);
+    if (preg_match("/^(.*?)\n[ \t]*\n(.*)$/s", $body, $parts) === 1) {
+        $maybeLead = trim($parts[1]);
+        $maybeRest = trim($parts[2]);
+        if ($maybeLead !== '' && $maybeRest !== '') {
+            $lead = $maybeLead;
+            $rest = $maybeRest;
+        }
+    }
+
+    $lines = $rest === '' ? [] : explode("\n", $rest);
+    $limit = 3;
+    $truncate = count($lines) > $limit;
+    $previewRest = $truncate ? implode("\n", array_slice($lines, 0, $limit)) : $rest;
+    if ($lead === '') {
+        $all = trim($body) === '' ? [] : explode("\n", trim($body));
+        $truncate = count($all) > $limit;
+        $previewRest = $truncate ? implode("\n", array_slice($all, 0, $limit)) : trim($body);
+    }
+
+    return [
+        'lead' => $lead,
+        'previewRest' => $previewRest,
+        'truncate' => $truncate,
+    ];
 }
 
 function linkify_note_label(string $label): string
@@ -855,9 +1029,11 @@ function phase1_thought_preview(string $text, int $max = 84): string
  * User overrides: `splits` are source line numbers that start a new note even
  * when the file has no break there. `joins` are source line numbers that stay
  * with the previous note even when a divider or blank line would split them.
+ * `deletes` are source line numbers left out of every phase. The note file
+ * itself is unchanged.
  *
  * @param list<array<string, mixed>> $lines
- * @param array{splits?: list<int>, joins?: list<int>} $overrides
+ * @param array{splits?: list<int>, joins?: list<int>, deletes?: list<int>} $overrides
  * @return array{mode: string, thoughts: list<array{id: int, start: int, end: int, preview: string, lines: int, hue: int, uncertain: bool, added: bool, blocked: bool, indexes: list<int>}>}
  */
 function phase1_thoughts(array $lines, array $overrides = []): array
@@ -889,6 +1065,13 @@ function phase1_thoughts(array $lines, array $overrides = []): array
         $n = (int) $n;
         if ($n > 0) {
             $joins[$n] = true;
+        }
+    }
+    $deletes = [];
+    foreach ($overrides['deletes'] ?? [] as $n) {
+        $n = (int) $n;
+        if ($n > 0) {
+            $deletes[$n] = true;
         }
     }
 
@@ -967,6 +1150,9 @@ function phase1_thoughts(array $lines, array $overrides = []): array
         }
         $text = (string) ($line['text'] ?? '');
         $n = (int) ($line['n'] ?? ($i + 1));
+        if (isset($deletes[$n])) {
+            continue;
+        }
         $isSeparator = $hasHardBreak
             ? (phase1_is_separator($text) || isset($blankRuns[$i]))
             : (trim($text) === '');
@@ -1007,6 +1193,82 @@ function phase1_thoughts(array $lines, array $overrides = []): array
     $mode = $hasHardBreak ? 'dividers' : 'blanks';
 
     return ['mode' => $mode, 'thoughts' => $thoughts];
+}
+
+/**
+ * Deleted source lines grouped back into ideas, so Phase 1 can offer Restore.
+ * A divider starts a new deleted idea. Blank lines inside a run stay with it.
+ *
+ * @param list<array<string, mixed>> $lines
+ * @param list<int> $deletes
+ * @return list<array{lines: list<int>, start: int, end: int, preview: string}>
+ */
+function phase1_deleted_ideas(array $lines, array $deletes): array
+{
+    $set = [];
+    foreach ($deletes as $n) {
+        $n = (int) $n;
+        if ($n > 0) {
+            $set[$n] = true;
+        }
+    }
+    if ($set === []) {
+        return [];
+    }
+
+    $ideas = [];
+    $buf = [];
+    $flush = static function () use (&$ideas, &$buf): void {
+        $content = [];
+        $preview = '';
+        foreach ($buf as $row) {
+            $content[] = (int) $row['n'];
+            if ($preview === '') {
+                $preview = phase1_thought_preview((string) $row['text']);
+            }
+        }
+        if ($content !== []) {
+            $ideas[] = [
+                'lines' => $content,
+                'start' => $content[0],
+                'end' => $content[count($content) - 1],
+                'preview' => $preview,
+            ];
+        }
+        $buf = [];
+    };
+
+    foreach ($lines as $i => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $text = (string) ($line['text'] ?? '');
+        $n = (int) ($line['n'] ?? ($i + 1));
+        $blank = trim($text) === '';
+        $sep = phase1_is_separator($text);
+        $deletedContent = isset($set[$n]) && !$blank && !$sep;
+        if ($deletedContent) {
+            $buf[] = ['n' => $n, 'text' => $text];
+            continue;
+        }
+        if ($sep) {
+            if ($buf !== []) {
+                $flush();
+            }
+            continue;
+        }
+        if ($blank) {
+            continue;
+        }
+        if ($buf !== []) {
+            $flush();
+        }
+    }
+    if ($buf !== []) {
+        $flush();
+    }
+
+    return $ideas;
 }
 
 /**
@@ -2092,7 +2354,7 @@ function phase1_region_line_list($value): array
 
 /**
  * @param mixed $data
- * @return array<string, array{splits: list<int>, joins: list<int>}>
+ * @return array<string, array{splits: list<int>, joins: list<int>, deletes: list<int>}>
  */
 function normalize_phase1_regions($data): array
 {
@@ -2112,15 +2374,17 @@ function normalize_phase1_regions($data): array
         if ($name === '' || $name === '.' || $name === '..') {
             continue;
         }
-        $splits = phase1_region_line_list($row['splits'] ?? []);
-        $joins = phase1_region_line_list($row['joins'] ?? []);
+        $deletes = phase1_region_line_list($row['deletes'] ?? []);
+        $splits = array_values(array_diff(phase1_region_line_list($row['splits'] ?? []), $deletes));
+        $joins = array_values(array_diff(phase1_region_line_list($row['joins'] ?? []), $deletes));
         $splits = array_values(array_diff($splits, $joins));
-        if ($splits === [] && $joins === []) {
+        if ($splits === [] && $joins === [] && $deletes === []) {
             continue;
         }
         $out[$name] = [
             'splits' => $splits,
             'joins' => $joins,
+            'deletes' => $deletes,
         ];
     }
     ksort($out, SORT_NATURAL | SORT_FLAG_CASE);
@@ -2139,7 +2403,7 @@ function parse_phase1_regions_md(string $raw): array
             $file = basename(str_replace('\\', '/', trim($m[1])));
             $section = '';
             if ($file !== '' && $file !== '.' && $file !== '..' && !isset($files[$file])) {
-                $files[$file] = ['splits' => [], 'joins' => []];
+                $files[$file] = ['splits' => [], 'joins' => [], 'deletes' => []];
             }
             continue;
         }
@@ -2154,6 +2418,10 @@ function parse_phase1_regions_md(string $raw): array
             $section = 'joins';
             continue;
         }
+        if (preg_match('/^### Deletes\s*$/', $line) === 1) {
+            $section = 'deletes';
+            continue;
+        }
         if ($section === '' || preg_match('/^\d+$/', trim($line)) !== 1) {
             continue;
         }
@@ -2164,7 +2432,7 @@ function parse_phase1_regions_md(string $raw): array
 }
 
 /**
- * @param array<string, array{splits: list<int>, joins: list<int>}> $data
+ * @param array<string, array{splits: list<int>, joins: list<int>, deletes: list<int>}> $data
  */
 function format_phase1_regions_md(array $data): string
 {
@@ -2172,7 +2440,7 @@ function format_phase1_regions_md(array $data): string
     $parts = [
         '# Phase 1 regions',
         '',
-        'Corrections when a note boundary is wrong. A split starts a new note at that source line. A join keeps that source line in the previous note.',
+        'Corrections when a note boundary is wrong. A split starts a new note at that source line. A join keeps that source line in the previous note. A delete keeps that source line out of every phase. The note file itself is unchanged.',
         '',
     ];
     foreach ($data as $name => $row) {
@@ -2193,13 +2461,19 @@ function format_phase1_regions_md(array $data): string
             $parts[] = (string) $n;
         }
         $parts[] = '';
+        $parts[] = '### Deletes';
+        $parts[] = '';
+        foreach ($row['deletes'] as $n) {
+            $parts[] = (string) $n;
+        }
+        $parts[] = '';
     }
 
     return rtrim(implode("\n", $parts)) . "\n";
 }
 
 /**
- * @return array<string, array{splits: list<int>, joins: list<int>}>
+ * @return array<string, array{splits: list<int>, joins: list<int>, deletes: list<int>}>
  */
 function load_phase1_regions(string $dir): array
 {
@@ -2216,7 +2490,7 @@ function load_phase1_regions(string $dir): array
 }
 
 /**
- * @param array<string, array{splits: list<int>, joins: list<int>}> $data
+ * @param array<string, array{splits: list<int>, joins: list<int>, deletes?: list<int>}> $data
  */
 function save_phase1_regions(string $dir, array $data): bool
 {
@@ -2238,11 +2512,16 @@ function save_phase1_regions(string $dir, array $data): bool
  *
  * @param list<array<string, mixed>> $lines
  * @param list<mixed> $starts
- * @return array{splits: list<int>, joins: list<int>}
+ * @param list<int> $deletes
+ * @return array{splits: list<int>, joins: list<int>, deletes: list<int>}
  */
-function phase1_region_overrides_from_starts(array $lines, array $starts): array
+function phase1_region_overrides_from_starts(array $lines, array $starts, array $deletes = []): array
 {
-    $auto = phase1_thoughts($lines);
+    $deleteSet = [];
+    foreach (phase1_region_line_list($deletes) as $n) {
+        $deleteSet[$n] = true;
+    }
+    $auto = phase1_thoughts($lines, ['deletes' => array_keys($deleteSet)]);
     $autoStarts = [];
     foreach ($auto['thoughts'] as $thought) {
         $autoStarts[(int) $thought['start']] = true;
@@ -2260,7 +2539,7 @@ function phase1_region_overrides_from_starts(array $lines, array $starts): array
     $want = [];
     foreach ($starts as $n) {
         $n = (int) $n;
-        if ($n > 0 && isset($valid[$n])) {
+        if ($n > 0 && isset($valid[$n]) && !isset($deleteSet[$n])) {
             $want[$n] = true;
         }
     }
@@ -2285,7 +2564,305 @@ function phase1_region_overrides_from_starts(array $lines, array $starts): array
     return [
         'splits' => $splitList,
         'joins' => $joinList,
+        'deletes' => array_keys($deleteSet),
     ];
+}
+
+/**
+ * @param array<string, array{splits?: list<int>, joins?: list<int>, deletes?: list<int>}> $regions
+ * @return array<string, array<int, true>>
+ */
+function phase1_delete_index(array $regions): array
+{
+    $index = [];
+    foreach ($regions as $file => $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        foreach ($row['deletes'] ?? [] as $n) {
+            $n = (int) $n;
+            if ($n > 0) {
+                $index[(string) $file][$n] = true;
+            }
+        }
+    }
+
+    return $index;
+}
+
+/**
+ * @return array{file: string, lines: list<int>}
+ */
+function parse_source_ref(string $src): array
+{
+    $src = trim($src);
+    if (preg_match('/^(.+):(\d+)(?:-(\d+))?$/', $src, $m) !== 1) {
+        return ['file' => '', 'lines' => []];
+    }
+    $file = basename(str_replace('\\', '/', $m[1]));
+    if ($file === '' || $file === '.' || $file === '..') {
+        return ['file' => '', 'lines' => []];
+    }
+    $start = (int) $m[2];
+    $end = isset($m[3]) && $m[3] !== '' ? (int) $m[3] : $start;
+    if ($start < 1) {
+        return ['file' => '', 'lines' => []];
+    }
+    if ($end < $start) {
+        $swap = $start;
+        $start = $end;
+        $end = $swap;
+    }
+    if ($end - $start > 5000) {
+        $end = $start + 5000;
+    }
+    $lines = [];
+    for ($n = $start; $n <= $end; $n++) {
+        $lines[] = $n;
+    }
+
+    return ['file' => $file, 'lines' => $lines];
+}
+
+/**
+ * @param array{tasks?: list<array<string, mixed>>, reference?: list<array<string, mixed>>, articleCandidates?: list<array<string, mixed>>} $organized
+ * @return array<string, array<string, mixed>>
+ */
+function organized_item_index(array $organized): array
+{
+    $byId = [];
+    foreach (phase2_bucket_keys() as $bucket) {
+        $items = $organized[$bucket] ?? [];
+        if (!is_array($items)) {
+            continue;
+        }
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $id = trim((string) ($item['id'] ?? ''));
+            if ($id === '') {
+                continue;
+            }
+            $byId[$id] = $item;
+        }
+    }
+
+    return $byId;
+}
+
+/**
+ * @param array{tasks?: list<array<string, mixed>>, reference?: list<array<string, mixed>>, articleCandidates?: list<array<string, mixed>>} $organized
+ * @return array<string, array<int, true>>
+ */
+function source_lines_used_by(array $organized): array
+{
+    $used = [];
+    foreach (organized_item_index($organized) as $item) {
+        $sources = $item['sources'] ?? [];
+        if (!is_array($sources)) {
+            continue;
+        }
+        foreach ($sources as $src) {
+            $parsed = parse_source_ref((string) $src);
+            if ($parsed['file'] === '') {
+                continue;
+            }
+            foreach ($parsed['lines'] as $n) {
+                $used[$parsed['file']][$n] = true;
+            }
+        }
+    }
+
+    return $used;
+}
+
+/**
+ * Source lines that disappeared with a removed card and are not still cited.
+ *
+ * @param array{tasks?: list<array<string, mixed>>, reference?: list<array<string, mixed>>, articleCandidates?: list<array<string, mixed>>} $before
+ * @param array{tasks?: list<array<string, mixed>>, reference?: list<array<string, mixed>>, articleCandidates?: list<array<string, mixed>>} $after
+ * @return array{files: array<string, array<int, true>>, ids: list<string>}
+ */
+function removed_item_lines(array $before, array $after): array
+{
+    $beforeItems = organized_item_index($before);
+    $afterItems = organized_item_index($after);
+    $usedAfter = source_lines_used_by($after);
+    $files = [];
+    $ids = [];
+    foreach ($beforeItems as $id => $item) {
+        if (isset($afterItems[$id])) {
+            continue;
+        }
+        $ids[] = $id;
+        $sources = $item['sources'] ?? [];
+        if (!is_array($sources)) {
+            continue;
+        }
+        foreach ($sources as $src) {
+            $parsed = parse_source_ref((string) $src);
+            if ($parsed['file'] === '') {
+                continue;
+            }
+            foreach ($parsed['lines'] as $n) {
+                if (!empty($usedAfter[$parsed['file']][$n])) {
+                    continue;
+                }
+                $files[$parsed['file']][$n] = true;
+            }
+        }
+    }
+
+    return ['files' => $files, 'ids' => $ids];
+}
+
+/**
+ * @param array<string, array{splits?: list<int>, joins?: list<int>, deletes?: list<int>}> $regions
+ * @param array<string, array<int, true>> $files
+ * @return array<string, array{splits: list<int>, joins: list<int>, deletes: list<int>}>
+ */
+function merge_region_deletes(array $regions, array $files): array
+{
+    foreach ($files as $file => $lines) {
+        $file = basename(str_replace('\\', '/', (string) $file));
+        if ($file === '' || $file === '.' || $file === '..') {
+            continue;
+        }
+        if (!isset($regions[$file]) || !is_array($regions[$file])) {
+            $regions[$file] = ['splits' => [], 'joins' => [], 'deletes' => []];
+        }
+        $have = [];
+        foreach ($regions[$file]['deletes'] ?? [] as $n) {
+            $n = (int) $n;
+            if ($n > 0) {
+                $have[$n] = true;
+            }
+        }
+        foreach ($lines as $n => $_) {
+            $n = (int) $n;
+            if ($n > 0) {
+                $have[$n] = true;
+            }
+        }
+        $list = array_keys($have);
+        sort($list, SORT_NUMERIC);
+        $regions[$file]['splits'] = phase1_region_line_list($regions[$file]['splits'] ?? []);
+        $regions[$file]['joins'] = phase1_region_line_list($regions[$file]['joins'] ?? []);
+        $regions[$file]['deletes'] = $list;
+    }
+
+    return $regions;
+}
+
+/**
+ * @param array<string, mixed> $blame
+ * @param array<string, array<int, true>> $files
+ * @return array<string, mixed>
+ */
+function blame_mark_deleted(array $blame, array $files): array
+{
+    foreach ($files as $file => $lines) {
+        if (!isset($blame[$file]) || !is_array($blame[$file])) {
+            continue;
+        }
+        foreach ($blame[$file] as $i => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $n = (int) ($entry['n'] ?? 0);
+            if ($n < 1 || empty($lines[$n])) {
+                continue;
+            }
+            $entry['fate'] = 'dropped_user';
+            $entry['to'] = [];
+            $entry['comment'] = 'Deleted in the app.';
+            $blame[$file][$i] = $entry;
+        }
+    }
+
+    return $blame;
+}
+
+/**
+ * @param array<string, mixed> $item
+ * @param array<string, array<int, true>> $index
+ */
+function item_sources_fully_deleted(array $item, array $index): bool
+{
+    $sources = $item['sources'] ?? [];
+    if (!is_array($sources) || $sources === []) {
+        return false;
+    }
+    $saw = false;
+    foreach ($sources as $src) {
+        $parsed = parse_source_ref((string) $src);
+        if ($parsed['file'] === '' || $parsed['lines'] === []) {
+            return false;
+        }
+        $saw = true;
+        foreach ($parsed['lines'] as $n) {
+            if (empty($index[$parsed['file']][$n])) {
+                return false;
+            }
+        }
+    }
+
+    return $saw;
+}
+
+/**
+ * @param array{tasks: list<array<string, mixed>>, reference: list<array<string, mixed>>, articleCandidates: list<array<string, mixed>>} $organized
+ * @param array<string, array{splits?: list<int>, joins?: list<int>, deletes?: list<int>}> $regions
+ * @return array{tasks: list<array<string, mixed>>, reference: list<array<string, mixed>>, articleCandidates: list<array<string, mixed>>}
+ */
+function organized_hiding_deleted(array $organized, array $regions): array
+{
+    $index = phase1_delete_index($regions);
+    $out = normalize_organized(null);
+    foreach (phase2_bucket_keys() as $bucket) {
+        foreach ($organized[$bucket] ?? [] as $item) {
+            if (!is_array($item) || item_sources_fully_deleted($item, $index)) {
+                continue;
+            }
+            $out[$bucket][] = $item;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * Remember removed cards as deleted ideas and mark their blame lines dropped.
+ *
+ * @param array{tasks: list<array<string, mixed>>, reference: list<array<string, mixed>>, articleCandidates: list<array<string, mixed>>} $before
+ * @param array{tasks: list<array<string, mixed>>, reference: list<array<string, mixed>>, articleCandidates: list<array<string, mixed>>} $after
+ * @param array<string, mixed> $blame
+ * @return array<string, mixed>
+ */
+function persist_removed_ideas(string $dir, array $before, array $after, array $blame): array
+{
+    $removed = removed_item_lines($before, $after);
+    if ($removed['files'] !== []) {
+        $regions = merge_region_deletes(load_phase1_regions($dir), $removed['files']);
+        save_phase1_regions($dir, $regions);
+        $blame = blame_mark_deleted($blame, $removed['files']);
+    }
+    if ($removed['ids'] !== []) {
+        $suggestions = load_phase2_suggestions($dir);
+        $changed = false;
+        foreach ($removed['ids'] as $id) {
+            if (isset($suggestions['items'][$id])) {
+                unset($suggestions['items'][$id]);
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            save_phase2_suggestions($dir, $suggestions);
+        }
+    }
+
+    return $blame;
 }
 
 function snapshots_dir(): string
@@ -2568,6 +3145,13 @@ function update_snapshot(string $id, array $phase2): array
     $blame = is_array($existing['blame'] ?? null) ? $existing['blame'] : [];
     if (array_key_exists('blame', $phase2) && is_array($phase2['blame'])) {
         $blame = $phase2['blame'];
+    }
+    $beforeOrganized = normalize_organized(
+        is_array($existing['organized'] ?? null) ? $existing['organized'] : []
+    );
+    $removedFromSnapshot = removed_item_lines($beforeOrganized, $organized);
+    if ($removedFromSnapshot['files'] !== []) {
+        $blame = blame_mark_deleted($blame, $removedFromSnapshot['files']);
     }
 
     $payload = [

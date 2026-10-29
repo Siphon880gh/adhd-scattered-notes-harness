@@ -20,6 +20,22 @@ Empty lines or dividers are fine: dashes (`--`, `---`, `------`), `<hr>`, a line
 
 You can paste an entire article into a note full of other random thoughts. Mark the article off with a divider. If the article already contains dashes, `<hr>`, or asterisks, leave them; the skill keeps those as sections of that article when they are not a new idea.
 
+## Photos
+
+Put the image in the same `inputs/{name}/` folder as the note. Either syntax works:
+
+```markdown
+![sketch of the error](error.png)
+```
+
+```markdown
+![[error.png]]
+```
+
+If you would rather not place image files yourself, share a public Evernote or UpNote URL instead. In Evernote, set **Anyone with the link can view** and copy the link. In UpNote, use Share → **Copy Link** (or **Share Link** on a phone). The skill downloads the pictures into `attachments/` inside that inputs folder and links them for you.
+
+In the app, a photo stays a comfortable size and keeps its shape. Click it to open a larger view and enlarge it.
+
 ## Shorthands and symbols
 
 Shorthands and symbols are welcome. When something is unclear, AI asks you to clarify, then builds a dictionary of your shorthands (`shorthands.md`) so it can read your notes the way you write them.

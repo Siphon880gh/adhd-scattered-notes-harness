@@ -9,6 +9,61 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(sel));
   }
 
+  var ideaConfirmOpen = false;
+
+  function askUserConfirm(opts) {
+    opts = opts || {};
+    var dialog = qs("[data-idea-confirm]");
+    if (!dialog || ideaConfirmOpen) return Promise.resolve(false);
+    return new Promise(function (resolve) {
+      ideaConfirmOpen = true;
+      var titleEl = qs("[data-idea-confirm-title]", dialog);
+      var previewEl = qs("[data-idea-confirm-preview]", dialog);
+      var messageEl = qs("[data-idea-confirm-message]", dialog);
+      var okBtn = qs("[data-idea-confirm-ok]", dialog);
+      var cancelBtn = qs("button[data-idea-confirm-cancel]", dialog);
+      if (titleEl) titleEl.textContent = opts.title || "Delete this idea?";
+      if (messageEl) messageEl.textContent = opts.message || "";
+      if (previewEl) {
+        var preview = String(opts.preview || "").trim();
+        previewEl.textContent = preview;
+        previewEl.hidden = preview === "";
+      }
+      if (okBtn) {
+        okBtn.textContent = opts.confirmLabel || "Delete";
+        okBtn.classList.toggle("app-header__btn--danger", opts.danger !== false);
+      }
+      function finish(ok) {
+        if (!ideaConfirmOpen) return;
+        ideaConfirmOpen = false;
+        dialog.hidden = true;
+        document.removeEventListener("keydown", onKey, true);
+        resolve(!!ok);
+      }
+      function onKey(e) {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        finish(false);
+      }
+      qsa("[data-idea-confirm-cancel]", dialog).forEach(function (el) {
+        el.onclick = function (e) {
+          e.preventDefault();
+          finish(false);
+        };
+      });
+      if (okBtn) {
+        okBtn.onclick = function (e) {
+          e.preventDefault();
+          finish(true);
+        };
+      }
+      dialog.hidden = false;
+      document.addEventListener("keydown", onKey, true);
+      if (cancelBtn) cancelBtn.focus();
+    });
+  }
+
   function closeHeaderDisclosures(except) {
     [
       ["[data-history-panel]", "[data-history-toggle]"],
@@ -96,7 +151,7 @@
     if (open) {
       noteModalLastFocus = document.activeElement;
       if (noteModalTitle) noteModalTitle.innerHTML = linkifyNote(title || "");
-      if (noteModalBody) noteModalBody.innerHTML = linkifyNote(body || "");
+      if (noteModalBody) noteModalBody.innerHTML = noteBodyHtml(body || "");
       noteModal.setAttribute("data-full-text", body || "");
       noteModal.hidden = false;
       document.body.style.overflow = "hidden";
@@ -178,25 +233,92 @@
     return url;
   }
 
+  function noteImageRoot() {
+    var folder = document.body.getAttribute("data-input-folder") || "";
+    if (!folder || /[\\/]/.test(folder) || folder === "." || folder === "..") return "";
+    return "inputs/" + folder;
+  }
+
+  function noteImageCaption(alt) {
+    alt = String(alt || "").trim();
+    if (!alt || /^\d+(?:x\d+)?$/i.test(alt)) return "";
+    return linkifyNoteLabel(alt);
+  }
+
+  function noteImagePathSegments(path) {
+    if (!path) return [];
+    var segments = [];
+    var parts = String(path).split("/");
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i] || parts[i] === "." || parts[i] === "..") return [];
+      segments.push(encodeURIComponent(parts[i]));
+    }
+    return segments;
+  }
+
+  function noteImageSrc(raw) {
+    raw = String(raw || "").trim();
+    if (!raw) return "";
+    if (raw.charAt(0) === "<" && raw.charAt(raw.length - 1) === ">") {
+      raw = raw.slice(1, -1).trim();
+    }
+    var titled = raw.match(/^(.*?)\s+(["']).*?\2\s*$/);
+    if (titled) raw = titled[1].trim();
+    if (/^https?:\/\//i.test(raw)) return linkifyNoteUrl(raw);
+    raw = raw.replace(/\\/g, "/");
+    if (raw.indexOf("\0") !== -1 || /(^|\/)\.\.(\/|$)/.test(raw)) return "";
+    if (raw.charAt(0) === "/" || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return "";
+    raw = raw.replace(/^\.\/+/, "");
+    if (!/\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(raw)) return "";
+    var segments = noteImagePathSegments(raw);
+    var root = noteImagePathSegments(noteImageRoot());
+    if (!segments.length || !root.length) return "";
+    return root.concat(segments).join("/");
+  }
+
+  function noteImageHtml(src, alt) {
+    var label = alt || "photo";
+    var html = '<span class="note-figure">';
+    html +=
+      '<button type="button" class="note-image-btn" data-note-image data-full-src="' +
+      escapeHtml(src) +
+      '" aria-label="' +
+      escapeHtml("View larger: " + label) +
+      '">';
+    html += '<img class="note-image" src="' + escapeHtml(src) + '" alt="' + escapeHtml(alt || "Photo") + '">';
+    html += "</button>";
+    if (alt) html += '<span class="note-image-caption">' + escapeHtml(alt) + "</span>";
+    html += "</span>";
+    return html;
+  }
+
   function linkifyNote(text) {
     text = String(text || "");
-    var pattern = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g;
+    var pattern = /!\[\[([^\]\n|#]+)(?:#[^\]\n|]+)?(?:\|([^\]\n]*))?\]\]|!\[([^\]\n]*)\]\(([^)\n]+)\)|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g;
     var out = "";
     var last = 0;
     var match;
     while ((match = pattern.exec(text))) {
       var start = match.index;
       if (start < last) continue;
-      if (start > 0 && /[\w/]/.test(text.charAt(start - 1)) && !match[1]) {
+      var end = start + match[0].length;
+      var tail = "";
+      if (match[1] || match[4]) {
+        var src = noteImageSrc(match[1] || match[4]);
+        var alt = noteImageCaption(match[1] ? match[2] : match[3]);
+        out += escapeHtml(text.slice(last, start));
+        out += src ? noteImageHtml(src, alt) : escapeHtml(match[0]);
+        last = end;
         continue;
       }
-      var end = start + match[0].length;
+      if (!match[6] && start > 0 && /[\w/]/.test(text.charAt(start - 1))) {
+        continue;
+      }
       var url = "";
       var label = "";
-      var tail = "";
-      if (match[2]) {
-        url = match[2];
-        label = linkifyNoteLabel(match[1]);
+      if (match[6]) {
+        url = match[6];
+        label = linkifyNoteLabel(match[5]);
         var before = text.slice(Math.max(0, start - 2), start);
         var after = text.slice(end, end + 2);
         if ((before === "**" && after === "**") || (before === "__" && after === "__")) {
@@ -204,7 +326,7 @@
           end += 2;
         }
       } else {
-        var trimmed = linkifyNoteTrimUrl(match[3]);
+        var trimmed = linkifyNoteTrimUrl(match[7]);
         url = trimmed.url;
         tail = trimmed.tail;
         end = start + url.length;
@@ -229,6 +351,158 @@
     out += escapeHtml(text.slice(last));
     return out;
   }
+
+  function noteBodyHtml(text) {
+    text = String(text || "");
+    var match = text.match(/^([\s\S]*?)\n[ \t]*\n([\s\S]+)$/);
+    var lead = "";
+    var rest = text.trim();
+    if (match && match[1].trim() && match[2].trim()) {
+      lead = match[1].trim();
+      rest = match[2].trim();
+    }
+    var html = "";
+    if (lead) html += '<p class="note-lead">' + linkifyNote(lead) + "</p>";
+    if (rest) html += '<div class="note-rest">' + linkifyNote(rest) + "</div>";
+    return html;
+  }
+
+  function initImageLightbox() {
+    var lightbox = qs("[data-image-lightbox]");
+    var img = lightbox ? qs("[data-image-lightbox-img]", lightbox) : null;
+    var frame = lightbox ? qs(".image-lightbox__frame", lightbox) : null;
+    if (!lightbox || !img) return;
+    var zoom = 1;
+    var baseWidth = 0;
+    var lastFocus = null;
+
+    function fitWidth() {
+      var nw = img.naturalWidth || 1;
+      var nh = img.naturalHeight || 1;
+      var maxW = Math.min(window.innerWidth * 0.9, 1100);
+      var maxH = Math.min(window.innerHeight * 0.78, 820);
+      var scale = Math.min(maxW / nw, maxH / nh, 1);
+      return Math.max(1, Math.round(nw * scale));
+    }
+
+    function applyZoom() {
+      if (!baseWidth) return;
+      img.style.width = Math.round(baseWidth * zoom) + "px";
+      img.style.height = "auto";
+      img.style.maxWidth = "none";
+      img.style.maxHeight = "none";
+    }
+
+    function openLightbox(src, alt) {
+      if (!src) return;
+      lastFocus = document.activeElement;
+      zoom = 1;
+      baseWidth = 0;
+      img.alt = alt || "Photo";
+      img.style.width = "";
+      lightbox.hidden = false;
+      document.body.style.overflow = "hidden";
+      function fitted() {
+        baseWidth = fitWidth();
+        applyZoom();
+      }
+      img.onload = fitted;
+      if (img.getAttribute("src") === src && img.complete && img.naturalWidth) {
+        fitted();
+      } else {
+        img.src = src;
+      }
+      if (frame) frame.focus();
+    }
+
+    function closeLightbox() {
+      if (lightbox.hidden) return;
+      lightbox.hidden = true;
+      img.onload = null;
+      img.removeAttribute("src");
+      if (!isNoteModalOpen() && !(drawer && drawer.classList.contains("is-open"))) {
+        document.body.style.overflow = "";
+      }
+      if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
+      lastFocus = null;
+    }
+
+    document.addEventListener(
+      "click",
+      function (e) {
+        var photo = e.target.closest("[data-note-image]");
+        if (photo) {
+          e.preventDefault();
+          e.stopPropagation();
+          var picture = photo.querySelector("img");
+          openLightbox(
+            photo.getAttribute("data-full-src") || (picture ? picture.getAttribute("src") : ""),
+            picture ? picture.getAttribute("alt") || "" : ""
+          );
+          return;
+        }
+        if (lightbox.hidden) return;
+        if (e.target.closest("[data-image-lightbox-close]")) {
+          e.preventDefault();
+          closeLightbox();
+          return;
+        }
+        var zoomBtn = e.target.closest("[data-image-zoom]");
+        if (!zoomBtn || !lightbox.contains(zoomBtn)) return;
+        e.preventDefault();
+        var dir = zoomBtn.getAttribute("data-image-zoom");
+        if (dir === "in") zoom = Math.min(4, Math.round(zoom * 1.25 * 100) / 100);
+        else if (dir === "out") zoom = Math.max(1, Math.round((zoom / 1.25) * 100) / 100);
+        else zoom = 1;
+        if (!baseWidth) baseWidth = fitWidth();
+        applyZoom();
+      },
+      true
+    );
+
+    document.addEventListener(
+      "keydown",
+      function (e) {
+        if (lightbox.hidden) return;
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          closeLightbox();
+          return;
+        }
+        if (e.key === "+" || e.key === "=") {
+          e.preventDefault();
+          zoom = Math.min(4, Math.round(zoom * 1.25 * 100) / 100);
+          applyZoom();
+        } else if (e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          zoom = Math.max(1, Math.round((zoom / 1.25) * 100) / 100);
+          applyZoom();
+        } else if (e.key === "0") {
+          e.preventDefault();
+          zoom = 1;
+          applyZoom();
+        }
+      },
+      true
+    );
+
+    lightbox.addEventListener(
+      "wheel",
+      function (e) {
+        if (lightbox.hidden) return;
+        if (!e.target.closest("[data-image-lightbox-stage], [data-image-lightbox-img]")) return;
+        e.preventDefault();
+        var next = e.deltaY < 0 ? zoom * 1.1 : zoom / 1.1;
+        zoom = Math.max(1, Math.min(4, next));
+        if (!baseWidth) baseWidth = fitWidth();
+        applyZoom();
+      },
+      { passive: false }
+    );
+  }
+
+  initImageLightbox();
 
   function noteCopyPayload(title, body) {
     var titleText = (title || "").trim();
@@ -635,6 +909,62 @@
   var saveTimer = null;
   var suggestionsSaveTimer = null;
   var organizedState = null;
+  var phase1DeleteIndex = {};
+
+  function parseSourceRef(src) {
+    var match = String(src || "").trim().match(/^(.+):(\d+)(?:-(\d+))?$/);
+    if (!match) return { file: "", lines: [] };
+    var file = match[1].split(/[/\\]/).pop();
+    var start = parseInt(match[2], 10);
+    var end = match[3] ? parseInt(match[3], 10) : start;
+    if (!file || !(start > 0)) return { file: "", lines: [] };
+    if (end < start) {
+      var swap = start;
+      start = end;
+      end = swap;
+    }
+    if (end - start > 5000) end = start + 5000;
+    var lines = [];
+    for (var n = start; n <= end; n++) lines.push(n);
+    return { file: file, lines: lines };
+  }
+
+  function itemSourcesFullyDeleted(item) {
+    var sources = item && Array.isArray(item.sources) ? item.sources : [];
+    if (!sources.length) return false;
+    for (var i = 0; i < sources.length; i++) {
+      var parsed = parseSourceRef(sources[i]);
+      if (!parsed.file || !parsed.lines.length) return false;
+      var set = phase1DeleteIndex[parsed.file];
+      if (!set) return false;
+      for (var j = 0; j < parsed.lines.length; j++) {
+        if (!set[parsed.lines[j]]) return false;
+      }
+    }
+    return true;
+  }
+
+  function loadPhase1DeleteIndex() {
+    phase1DeleteIndex = {};
+    var el = qs("#phase1-deletes-data");
+    if (!el) return;
+    var data = null;
+    try {
+      data = JSON.parse(el.textContent || "{}");
+    } catch (err) {
+      data = null;
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
+    Object.keys(data).forEach(function (file) {
+      var set = {};
+      var lines = Array.isArray(data[file]) ? data[file] : [];
+      lines.forEach(function (n) {
+        n = parseInt(n, 10);
+        if (n > 0) set[n] = true;
+      });
+      if (Object.keys(set).length) phase1DeleteIndex[file] = set;
+    });
+  }
   var filterLayoutState = [];
   var notebookOrderState = {};
   var PANEL_SUGGEST_KEYS = ["tasks", "reference", "articleCandidates"];
@@ -722,8 +1052,8 @@
     scheduleSave();
   }
 
-  function saveOrganized() {
-    if (isPhasePreview) return;
+  function saveOrganized(allowPreview) {
+    if (isPhasePreview && !allowPreview) return;
     if (!organizedState) return;
     syncFilterLayout();
     var body = JSON.stringify({
@@ -863,6 +1193,7 @@
     var tags = [];
     BUCKET_KEYS.forEach(function (bucket) {
       (organizedState[bucket] || []).forEach(function (item) {
+        if (itemSourcesFullyDeleted(item)) return;
         normalizeTagList(item.tags).forEach(function (tag) {
           var key = tag.toLowerCase();
           if (seen[key]) return;
@@ -1079,6 +1410,7 @@
     var n = 0;
     BUCKET_KEYS.forEach(function (bucket) {
       (organizedState[bucket] || []).forEach(function (item) {
+        if (itemSourcesFullyDeleted(item)) return;
         var match = normalizeTagList(item.tags).some(function (tag) {
           return tag.toLowerCase() === key;
         });
@@ -1094,6 +1426,7 @@
     if (!key || !organizedState) return rows;
     BUCKET_KEYS.forEach(function (bucket) {
       (organizedState[bucket] || []).forEach(function (item) {
+        if (itemSourcesFullyDeleted(item)) return;
         var match = normalizeTagList(item.tags).some(function (tag) {
           return tag.toLowerCase() === key;
         });
@@ -1264,13 +1597,22 @@
     copyBtn.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
 
+    var deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "notebook-note__delete";
+    deleteBtn.setAttribute("data-delete-item", "");
+    deleteBtn.setAttribute("title", "Delete this idea");
+    deleteBtn.setAttribute("aria-label", "Delete this idea");
+    deleteBtn.textContent = "Delete";
+
     header.appendChild(collapseBtn);
     header.appendChild(heading);
     header.appendChild(copyBtn);
+    header.appendChild(deleteBtn);
 
     var bodyEl = document.createElement("div");
     bodyEl.className = "notebook-note__body";
-    bodyEl.innerHTML = linkifyNote(body || "");
+    bodyEl.innerHTML = noteBodyHtml(body || "");
 
     var meta = document.createElement("div");
     meta.className = "notebook-note__meta";
@@ -2368,7 +2710,51 @@
     BUCKET_KEYS.forEach(function (bucket) {
       var el = qs('[data-bucket-count="' + bucket + '"]');
       if (!el) return;
-      el.textContent = String((organizedState[bucket] || []).length);
+      var count = (organizedState[bucket] || []).filter(function (item) {
+        return !itemSourcesFullyDeleted(item);
+      }).length;
+      el.textContent = String(count);
+    });
+  }
+
+  function deleteOrganizedItem(id) {
+    if (!id || !organizedState) return;
+    var loc = findItemLocation(id);
+    if (!loc) return;
+    var title = String(loc.item.title || id).replace(/\s+/g, " ").trim();
+    if (title.length > 80) title = title.slice(0, 79).replace(/\s+$/, "") + "…";
+    var message = isSnapshotView
+      ? "This removes the idea from this snapshot only."
+      : "It stays out of every phase. The original note file is kept.";
+    askUserConfirm({
+      title: isSnapshotView ? "Delete this idea from this snapshot?" : "Delete this idea?",
+      preview: title,
+      message: message,
+      confirmLabel: "Delete",
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      var current = findItemLocation(id);
+      if (!current || !organizedState) return;
+      organizedState[current.bucket].splice(current.index, 1);
+      qsa('[data-org-id="' + id.replace(/"/g, "") + '"]').forEach(function (el) {
+        el.remove();
+      });
+      if (suggestionsState && suggestionsState.items && suggestionsState.items[id]) {
+        delete suggestionsState.items[id];
+        scheduleSuggestionsSave();
+      }
+      syncEmptyState(current.bucket);
+      rebuildFilterBar();
+      applyFilter();
+      if (reviewLocked && notebookNotesEl) {
+        rebuildNotebookSidebar();
+        if (activeNotebookTag && !qsa(".notebook-note", notebookNotesEl).length) {
+          openNotebook(activeNotebookTag, activeNotebookFolderLabel);
+        }
+      }
+      if (saveTimer) clearTimeout(saveTimer);
+      saveOrganized(true);
     });
   }
 
@@ -2669,6 +3055,7 @@
   }
 
   if (phase2Root && organizedDataEl) {
+    loadPhase1DeleteIndex();
     try {
       organizedState = cloneOrganized(JSON.parse(organizedDataEl.textContent || "{}"));
     } catch (err) {
@@ -2721,6 +3108,16 @@
     }
 
     phase2Root.addEventListener("click", function (e) {
+      var deleteItemBtn = e.target.closest("[data-delete-item]");
+      if (deleteItemBtn && phase2Root.contains(deleteItemBtn)) {
+        if (deleteItemBtn.closest(".is-rearranging")) return;
+        e.preventDefault();
+        var deleteHost = deleteItemBtn.closest("[data-org-id]");
+        if (!deleteHost) return;
+        deleteOrganizedItem(deleteHost.getAttribute("data-org-id") || "");
+        return;
+      }
+
       var viewModeBtn = e.target.closest("[data-view-mode-btn]");
       if (viewModeBtn) {
         setViewMode(viewModeBtn.getAttribute("data-view-mode-btn") || "panels");
@@ -4011,7 +4408,7 @@
       if (
         sourceLine &&
         root.contains(sourceLine) &&
-        !e.target.closest("a[href], button, textarea, input, [data-phase1-suggest], .url-block")
+        !e.target.closest("a[href], button, textarea, input, [data-note-image], [data-phase1-suggest], .url-block")
       ) {
         var selected = window.getSelection ? String(window.getSelection()) : "";
         if (selected.trim() && sourceLine.contains(window.getSelection().anchorNode)) return;
@@ -4138,17 +4535,19 @@
         }).filter(function (lines) { return lines.length > 0; });
       }
 
-      function snapshot(suggestions, regions) {
+      function snapshot(suggestions, regions, deleted) {
         return {
           suggestions: suggestions || cloneSuggestions(),
           regions: regions || readRegions(),
+          deleted: deleted || phase1SessionDeleteList(),
         };
       }
 
       function sameSnapshot(a, b) {
         if (!a || !b) return false;
         return JSON.stringify(a.suggestions) === JSON.stringify(b.suggestions)
-          && JSON.stringify(a.regions) === JSON.stringify(b.regions);
+          && JSON.stringify(a.regions) === JSON.stringify(b.regions)
+          && JSON.stringify(phase1NormalizeLineList(a.deleted)) === JSON.stringify(phase1NormalizeLineList(b.deleted));
       }
 
       function liveSnapshot() {
@@ -4201,9 +4600,10 @@
         if (!burst) return;
         var label = burst.label;
         var regions = burst.regions;
+        var deleted = burst.deleted;
         clearTimeout(burst.timer);
         burst = null;
-        pushSnapshot(label, snapshot(cloneSuggestions(), regions));
+        pushSnapshot(label, snapshot(cloneSuggestions(), regions, deleted));
       }
 
       function applySnapshot(snap) {
@@ -4233,6 +4633,10 @@
         qsa(".thought-row", doc).forEach(function (row) {
           byLine[row.getAttribute("data-source-line") || ""] = row;
         });
+        phase1SessionDeleted = {};
+        phase1NormalizeLineList(snap.deleted).forEach(function (n) {
+          phase1SessionDeleted[String(n)] = true;
+        });
         var sections = phase1Sections(doc);
         var groups = snap.regions || [];
         while (sections.length < groups.length) {
@@ -4253,6 +4657,12 @@
         });
         sections.slice(groups.length).forEach(function (section) {
           section.remove();
+        });
+        var stash = phase1DeletedStash();
+        phase1NormalizeLineList(snap.deleted).forEach(function (n) {
+          var row = byLine[String(n)];
+          if (!row || !stash) return;
+          stash.appendChild(row);
         });
         paintPhase1Thoughts();
         applying = false;
@@ -4275,7 +4685,7 @@
 
       phase1History.noteSuggest = function (label) {
         if (applying) return;
-        if (!burst) burst = { label: label, regions: readRegions(), timer: 0 };
+        if (!burst) burst = { label: label, regions: readRegions(), deleted: phase1SessionDeleteList(), timer: 0 };
         burst.label = label;
         clearTimeout(burst.timer);
         burst.timer = setTimeout(flushBurst, 700);
@@ -4411,6 +4821,9 @@
     actions.appendChild(action("Split", "data-thought-split", ""));
     actions.appendChild(action("Merge up", "data-thought-merge", "prev"));
     actions.appendChild(action("Merge down", "data-thought-merge", "next"));
+    var deleteBtn = action("Delete", "data-thought-delete", "");
+    deleteBtn.classList.add("thought__action--danger");
+    actions.appendChild(deleteBtn);
     header.appendChild(index);
     header.appendChild(range);
     header.appendChild(preview);
@@ -4445,7 +4858,11 @@
     var el = qs("[data-thought-summary]");
     if (!el) return;
     if (count === 0) {
-      el.textContent = "No note text in this file yet. The map is this whole file.";
+      var emptyText = "No note text in this file yet.";
+      if (phase1DeletedIdeaNote()) {
+        emptyText += " Deleted ideas stay out of every phase.";
+      }
+      el.textContent = emptyText + " The map is this whole file.";
       return;
     }
     var mode = el.getAttribute("data-thought-mode") || "dashes";
@@ -4456,6 +4873,9 @@
     var text = count + " distinct " + noun + ", " + how + ".";
     if (el.getAttribute("data-thought-edited") === "1") {
       text += " Your boundary edits are saved.";
+    }
+    if (phase1DeletedIdeaNote()) {
+      text += " Deleted ideas stay out of every phase.";
     }
     text += " The map is this whole file.";
     el.textContent = text;
@@ -4496,6 +4916,7 @@
       if (splitBtn) {
         splitBtn.disabled = rows.length < 2;
         splitBtn.textContent = "Split";
+        splitBtn.title = rows.length < 2 ? "A one-line note cannot be split" : "Split this note into two";
         splitBtn.setAttribute("aria-pressed", "false");
       }
       var up = qs('[data-thought-merge="prev"]', section);
@@ -4522,6 +4943,7 @@
         "aria-label",
         edge === "top" ? "Resize the top of this idea" : "Resize the bottom of this idea"
       );
+      handle.title = edge === "top" ? "Drag the top edge to resize" : "Drag the bottom edge to resize";
       if (edge === "top") section.insertBefore(handle, section.firstChild);
       else section.appendChild(handle);
     }
@@ -4542,51 +4964,108 @@
   }
 
   var phase1RegionSaveTimer = 0;
+  var phase1RegionSaveChain = Promise.resolve();
+  var phase1RegionSaveGen = 0;
+  var phase1SessionDeleted = {};
+
+  function phase1NormalizeLineList(list) {
+    var seen = {};
+    (list || []).forEach(function (n) {
+      n = parseInt(n, 10);
+      if (n > 0) seen[n] = true;
+    });
+    return Object.keys(seen).map(function (n) { return parseInt(n, 10); }).sort(function (a, b) { return a - b; });
+  }
+
+  function phase1SessionDeleteList() {
+    return phase1NormalizeLineList(Object.keys(phase1SessionDeleted || {}));
+  }
+
+  function phase1InitialDeletes() {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc) return [];
+    try {
+      return phase1NormalizeLineList(JSON.parse(doc.getAttribute("data-phase1-deletes") || "[]"));
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function phase1DeletesForSave() {
+    var set = {};
+    phase1InitialDeletes().forEach(function (n) { set[n] = true; });
+    phase1SessionDeleteList().forEach(function (n) { set[n] = true; });
+    return phase1NormalizeLineList(Object.keys(set));
+  }
+
+  function phase1DeletedIdeaNote() {
+    var el = qs("[data-thought-summary]");
+    var marked = el && parseInt(el.getAttribute("data-thought-deleted") || "0", 10) > 0;
+    return marked || phase1SessionDeleteList().length > 0;
+  }
+
+  function phase1DeletedStash() {
+    var doc = qs("[data-phase1-lines]");
+    if (!doc) return null;
+    var stash = qs("[data-phase1-deleted-stash]", doc);
+    if (!stash) {
+      stash = document.createElement("div");
+      stash.setAttribute("data-phase1-deleted-stash", "");
+      stash.hidden = true;
+      doc.appendChild(stash);
+    }
+    return stash;
+  }
 
   function savePhase1Regions() {
-    if (isPhasePreview) return Promise.resolve({ ok: false });
     var doc = qs("[data-phase1-lines]");
     if (!doc) return Promise.resolve({ ok: false });
+    var gen = ++phase1RegionSaveGen;
     var file = doc.getAttribute("data-phase1-file") || "";
     var starts = phase1Sections(doc).map(function (section) {
       var row = qs(".thought-row", section);
       return row ? parseInt(row.getAttribute("data-source-line") || "0", 10) : 0;
     }).filter(function (n) { return n > 0; });
-    return fetch("index.php?action=save-phase1-regions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file: file, starts: starts }),
-    })
-      .then(function (res) { return res.json(); })
-      .then(function (data) {
-        var summary = qs("[data-thought-summary]");
-        var ok = !!(data && data.ok);
-        if (summary) {
-          if (!ok) {
-            summary.setAttribute("data-thought-edited", "0");
+    var deletes = phase1DeletesForSave();
+    var run = function () {
+      return fetch("index.php?action=save-phase1-regions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: file, starts: starts, deletes: deletes }),
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var summary = qs("[data-thought-summary]");
+          var ok = !!(data && data.ok);
+          if (gen === phase1RegionSaveGen && summary) {
+            if (!ok) {
+              summary.setAttribute("data-thought-edited", "0");
+              phase1Summary(phase1Sections(doc).length);
+              summary.textContent = summary.textContent.replace(
+                " The map is this whole file.",
+                " Could not save boundary edits. The map is this whole file."
+              );
+            } else {
+              summary.setAttribute("data-thought-edited", data.edited ? "1" : "0");
+              phase1Summary(phase1Sections(doc).length);
+            }
+          }
+          return { ok: ok };
+        })
+        .catch(function () {
+          var summary = qs("[data-thought-summary]");
+          if (gen === phase1RegionSaveGen && summary && doc) {
             phase1Summary(phase1Sections(doc).length);
             summary.textContent = summary.textContent.replace(
               " The map is this whole file.",
               " Could not save boundary edits. The map is this whole file."
             );
-          } else {
-            summary.setAttribute("data-thought-edited", data.edited ? "1" : "0");
-            phase1Summary(phase1Sections(doc).length);
           }
-        }
-        return { ok: ok };
-      })
-      .catch(function () {
-        var summary = qs("[data-thought-summary]");
-        if (summary && doc) {
-          phase1Summary(phase1Sections(doc).length);
-          summary.textContent = summary.textContent.replace(
-            " The map is this whole file.",
-            " Could not save boundary edits. The map is this whole file."
-          );
-        }
-        return { ok: false };
-      });
+          return { ok: false };
+        });
+    };
+    phase1RegionSaveChain = phase1RegionSaveChain.then(run, run);
+    return phase1RegionSaveChain;
   }
 
   function commitPhase1Regions(label) {
@@ -4635,6 +5114,35 @@
       return true;
     }
 
+    var deleteBtn = e.target.closest("[data-thought-delete]");
+    if (deleteBtn && doc.contains(deleteBtn)) {
+      e.preventDefault();
+      var deleteSection = deleteBtn.closest("[data-thought]");
+      if (!deleteSection) return true;
+      var previewEl = qs(".thought__preview", deleteSection);
+      var preview = previewEl ? String(previewEl.textContent || "").trim() : "";
+      if (preview.length > 80) preview = preview.slice(0, 79).replace(/\s+$/, "") + "…";
+      askUserConfirm({
+        title: "Delete this idea?",
+        preview: preview,
+        message: "It stays out of every phase. The original note file is kept. Undo on this page brings it back.",
+        confirmLabel: "Delete",
+        danger: true,
+      }).then(function (ok) {
+        if (!ok || !deleteSection.isConnected) return;
+        clearPhase1SplitMode(null);
+        var stash = phase1DeletedStash();
+        qsa(".thought-row", deleteSection).forEach(function (row) {
+          var n = parseInt(row.getAttribute("data-source-line") || "0", 10);
+          if (n > 0) phase1SessionDeleted[String(n)] = true;
+          if (stash) stash.appendChild(row);
+        });
+        deleteSection.remove();
+        commitPhase1Regions("Delete idea");
+      });
+      return true;
+    }
+
     var mergeBtn = e.target.closest("[data-thought-merge]");
     if (mergeBtn && doc.contains(mergeBtn)) {
       e.preventDefault();
@@ -4660,6 +5168,42 @@
   }
 
   function initPhase1Regions() {
+    document.addEventListener("click", function (e) {
+      var restoreBtn = e.target.closest("[data-restore-lines]");
+      if (!restoreBtn) return;
+      e.preventDefault();
+      var file = restoreBtn.getAttribute("data-restore-file") || "";
+      var lines = phase1NormalizeLineList(String(restoreBtn.getAttribute("data-restore-lines") || "").split(","));
+      if (!file || !lines.length || restoreBtn.disabled) return;
+      var restoreItem = restoreBtn.closest(".deleted-ideas__item");
+      var restorePreviewEl = restoreItem ? qs(".deleted-ideas__preview", restoreItem) : null;
+      var restorePreview = restorePreviewEl ? String(restorePreviewEl.textContent || "").trim() : "";
+      askUserConfirm({
+        title: "Restore this idea?",
+        preview: restorePreview,
+        message: "It shows on this Phase 1 page again. A card deleted in Phase 2 or 3 stays deleted until chat organizes it.",
+        confirmLabel: "Restore",
+        danger: false,
+      }).then(function (ok) {
+        if (!ok || !restoreBtn.isConnected) return;
+      restoreBtn.disabled = true;
+      fetch("index.php?action=restore-phase1-lines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: file, lines: lines }),
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!data || !data.ok) throw new Error((data && data.error) || "Could not restore");
+          window.location.reload();
+        })
+        .catch(function () {
+          restoreBtn.disabled = false;
+          window.alert("Could not restore this idea.");
+        });
+      });
+    });
+
     var doc = qs("[data-phase1-lines]");
     if (!doc) return;
     var chooser = document.createElement("div");
