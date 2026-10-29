@@ -6176,7 +6176,19 @@
   var bodyEl = modal.querySelector("[data-source-modal-body]");
   var itemsEl = taskbar.querySelector("[data-source-taskbar-items]");
   var current = null; // { file, line, endLine }
-  var minimized = []; // list of { file, line, endLine }
+  var minimized = []; // list of { file, line, endLine, scrollTop }
+  var lastFocus = null;
+  var dock = document.querySelector("[data-source-dock]");
+  var dockPanel = dock ? dock.querySelector("[data-source-dock-panel]") : null;
+
+  function setDockOpen(open) {
+    if (!dock || !dockPanel) return;
+    dockPanel.hidden = !open;
+    dock.classList.toggle("is-open", open);
+    dock.querySelectorAll("[data-source-dock-toggle]").forEach(function (btn) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
 
   function findContent(file) {
     var nodes = store.querySelectorAll("[data-source-content]");
@@ -6207,7 +6219,7 @@
       open.title = "Reopen " + refLabel(ref);
       open.addEventListener("click", function () {
         minimized.splice(idx, 1);
-        openRef(ref);
+        openRef(ref, { restore: true });
       });
       var close = document.createElement("button");
       close.type = "button";
@@ -6226,9 +6238,11 @@
     document.body.classList.toggle("has-source-taskbar", minimized.length > 0);
   }
 
-  function openRef(ref) {
+  function openRef(ref, opts) {
+    opts = opts || {};
     var content = findContent(ref.file);
     if (!content) return;
+    if (modal.hidden) lastFocus = document.activeElement;
     if (current && !sameRef(current, ref)) parkCurrent();
     minimized = minimized.filter(function (r) { return !sameRef(r, ref); });
     current = ref;
@@ -6251,13 +6265,26 @@
     modal.hidden = false;
     renderTaskbar();
     bodyEl.scrollTop = 0;
-    if (first) {
+    if (opts.restore && typeof ref.scrollTop === "number") {
+      // Reopened from the bar: put the reader back where they left off.
+      bodyEl.scrollTop = ref.scrollTop;
+    } else if (first) {
       first.scrollIntoView({ block: "center" });
     }
+    var minBtn = modal.querySelector(".source-modal__btn");
+    if (minBtn) minBtn.focus({ preventScroll: true });
+  }
+
+  function returnFocus() {
+    if (lastFocus && document.contains(lastFocus) && typeof lastFocus.focus === "function") {
+      lastFocus.focus({ preventScroll: true });
+    }
+    lastFocus = null;
   }
 
   function parkCurrent() {
     if (!current) return;
+    current.scrollTop = bodyEl.scrollTop;
     if (!minimized.some(function (r) { return sameRef(r, current); })) minimized.push(current);
     current = null;
   }
@@ -6266,15 +6293,24 @@
     parkCurrent();
     modal.hidden = true;
     renderTaskbar();
+    returnFocus();
   }
 
   function closeModal() {
     current = null;
     modal.hidden = true;
     renderTaskbar();
+    returnFocus();
   }
 
   document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-source-dock-toggle]")) {
+      setDockOpen(dockPanel ? dockPanel.hidden : false);
+      return;
+    }
+    if (dock && dockPanel && !dockPanel.hidden && !e.target.closest("[data-source-dock]") && !e.target.closest("[data-source-modal]")) {
+      setDockOpen(false);
+    }
     var trigger = e.target.closest("[data-open-source]");
     if (trigger) {
       e.preventDefault();
@@ -6296,6 +6332,8 @@
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !modal.hidden) minimize();
+    if (e.key !== "Escape") return;
+    if (!modal.hidden) minimize();
+    else if (dockPanel && !dockPanel.hidden) setDockOpen(false);
   });
 })();

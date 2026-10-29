@@ -2385,6 +2385,23 @@ $isSnapshotView = $viewingSnapshot !== null;
         </div>
     </div>
 
+    <div class="source-dock" data-source-dock>
+        <button type="button" class="source-dock__fab" data-source-dock-toggle aria-expanded="false" aria-controls="source-dock-panel" title="Original note files" aria-label="Show original note files">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </button>
+        <div id="source-dock-panel" class="source-dock__panel" data-source-dock-panel hidden>
+            <div class="source-dock__header">
+                <h2>Original notes</h2>
+                <button type="button" class="source-dock__close" data-source-dock-toggle aria-label="Hide original note files" title="Hide">&times;</button>
+            </div>
+            <nav class="source-dock__files" aria-label="Original note files">
+                <?php foreach ($noteFiles as $name): ?>
+                    <button type="button" class="source-dock__file" data-open-source="<?= e($name) ?>" title="Open <?= e($name) ?>"><?= e($name) ?></button>
+                <?php endforeach; ?>
+            </nav>
+        </div>
+    </div>
+
     <div class="source-taskbar" data-source-taskbar hidden aria-label="Minimized original notes">
         <div class="source-taskbar__items" data-source-taskbar-items></div>
     </div>
