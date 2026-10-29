@@ -6164,3 +6164,138 @@
     );
   }
 })();
+
+// Original note viewer: source refs on cards open the raw note file with the
+// cited lines highlighted. Minimize parks it in a bottom bar so it can be reopened.
+(function () {
+  var store = document.querySelector("[data-source-store]");
+  var modal = document.querySelector("[data-source-modal]");
+  var taskbar = document.querySelector("[data-source-taskbar]");
+  if (!store || !modal || !taskbar) return;
+  var titleEl = modal.querySelector("[data-source-modal-title]");
+  var bodyEl = modal.querySelector("[data-source-modal-body]");
+  var itemsEl = taskbar.querySelector("[data-source-taskbar-items]");
+  var current = null; // { file, line, endLine }
+  var minimized = []; // list of { file, line, endLine }
+
+  function findContent(file) {
+    var nodes = store.querySelectorAll("[data-source-content]");
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute("data-source-content") === file) return nodes[i];
+    }
+    return null;
+  }
+
+  function sameRef(a, b) {
+    return a.file === b.file && a.line === b.line && a.endLine === b.endLine;
+  }
+
+  function refLabel(ref) {
+    if (!ref.line) return ref.file;
+    return ref.file + ":" + ref.line + (ref.endLine && ref.endLine !== ref.line ? "-" + ref.endLine : "");
+  }
+
+  function renderTaskbar() {
+    itemsEl.innerHTML = "";
+    minimized.forEach(function (ref, idx) {
+      var chip = document.createElement("div");
+      chip.className = "source-taskbar__item";
+      var open = document.createElement("button");
+      open.type = "button";
+      open.className = "source-taskbar__open";
+      open.textContent = refLabel(ref);
+      open.title = "Reopen " + refLabel(ref);
+      open.addEventListener("click", function () {
+        minimized.splice(idx, 1);
+        openRef(ref);
+      });
+      var close = document.createElement("button");
+      close.type = "button";
+      close.className = "source-taskbar__close";
+      close.setAttribute("aria-label", "Close " + refLabel(ref));
+      close.textContent = "\u00d7";
+      close.addEventListener("click", function () {
+        minimized.splice(idx, 1);
+        renderTaskbar();
+      });
+      chip.appendChild(open);
+      chip.appendChild(close);
+      itemsEl.appendChild(chip);
+    });
+    taskbar.hidden = minimized.length === 0;
+    document.body.classList.toggle("has-source-taskbar", minimized.length > 0);
+  }
+
+  function openRef(ref) {
+    var content = findContent(ref.file);
+    if (!content) return;
+    if (current && !sameRef(current, ref)) parkCurrent();
+    minimized = minimized.filter(function (r) { return !sameRef(r, ref); });
+    current = ref;
+    titleEl.textContent = refLabel(ref);
+    bodyEl.innerHTML = "";
+    var view = content.cloneNode(true);
+    view.removeAttribute("data-source-content");
+    bodyEl.appendChild(view);
+    var first = null;
+    if (ref.line) {
+      var end = ref.endLine || ref.line;
+      view.querySelectorAll("[data-line]").forEach(function (el) {
+        var n = parseInt(el.getAttribute("data-line"), 10);
+        if (n >= ref.line && n <= end) {
+          el.classList.add("is-cited");
+          if (!first) first = el;
+        }
+      });
+    }
+    modal.hidden = false;
+    renderTaskbar();
+    bodyEl.scrollTop = 0;
+    if (first) {
+      first.scrollIntoView({ block: "center" });
+    }
+  }
+
+  function parkCurrent() {
+    if (!current) return;
+    if (!minimized.some(function (r) { return sameRef(r, current); })) minimized.push(current);
+    current = null;
+  }
+
+  function minimize() {
+    parkCurrent();
+    modal.hidden = true;
+    renderTaskbar();
+  }
+
+  function closeModal() {
+    current = null;
+    modal.hidden = true;
+    renderTaskbar();
+  }
+
+  document.addEventListener("click", function (e) {
+    var trigger = e.target.closest("[data-open-source]");
+    if (trigger) {
+      e.preventDefault();
+      e.stopPropagation();
+      var line = parseInt(trigger.getAttribute("data-open-line") || "", 10);
+      var endLine = parseInt(trigger.getAttribute("data-open-end-line") || "", 10);
+      openRef({
+        file: trigger.getAttribute("data-open-source"),
+        line: isNaN(line) ? null : line,
+        endLine: isNaN(endLine) ? null : endLine,
+      });
+      return;
+    }
+    if (e.target.closest("[data-source-minimize]")) {
+      minimize();
+    } else if (e.target.closest("[data-source-close]")) {
+      closeModal();
+    }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !modal.hidden) minimize();
+  });
+})();

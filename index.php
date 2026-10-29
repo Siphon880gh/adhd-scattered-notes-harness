@@ -805,6 +805,39 @@ function render_count_bar_items(array $items): void
 }
 
 /**
+ * Source ref as a button that opens the original note file in the viewer.
+ * Shows plain text when the file is not in this folder.
+ */
+function render_source_open_link(string $ref): void
+{
+    global $noteFiles;
+    $parsed = parse_source_ref($ref);
+    $file = $parsed['file'];
+    if ($parsed['lines'] !== []) {
+        $parsed['line'] = $parsed['lines'][0];
+        $parsed['endLine'] = $parsed['lines'][count($parsed['lines']) - 1];
+    } else {
+        $parsed['line'] = null;
+        $parsed['endLine'] = null;
+    }
+    if ($file === '' || !is_array($noteFiles) || !in_array($file, $noteFiles, true)) {
+        echo '<span class="source-ref source-ref--missing">' . e($ref) . '</span>';
+        return;
+    }
+    $title = 'Open ' . $file;
+    if ($parsed['line'] !== null) {
+        $title .= $parsed['endLine'] !== $parsed['line']
+            ? ' (lines ' . $parsed['line'] . '-' . $parsed['endLine'] . ')'
+            : ' (line ' . $parsed['line'] . ')';
+    }
+    echo '<button type="button" class="source-ref" data-open-source="' . e($file) . '"';
+    if ($parsed['line'] !== null) {
+        echo ' data-open-line="' . $parsed['line'] . '" data-open-end-line="' . $parsed['endLine'] . '"';
+    }
+    echo ' title="' . e($title) . '" aria-label="' . e($title) . '">' . e($ref) . '</button>';
+}
+
+/**
  * @param list<array<string, mixed>> $items
  * @param array<string, string> $itemSuggestions
  * @param bool $reviewLocked Phase 3: no Suggest / green-check controls
@@ -883,8 +916,14 @@ function render_item_cards(array $items, string $bucket, string $emptyLabel, arr
             echo '</div>';
         }
         if ($sources !== []) {
-            $srcText = implode(', ', array_map('strval', $sources));
-            echo '<div class="item-card__meta">' . e($srcText) . '</div>';
+            echo '<div class="item-card__meta item-card__sources">';
+            foreach (array_values($sources) as $i => $src) {
+                if ($i > 0) {
+                    echo '<span class="item-card__sources-sep">, </span>';
+                }
+                render_source_open_link((string) $src);
+            }
+            echo '</div>';
         }
         if (!$reviewLocked) {
             $suggestFieldId = 'suggest-' . ($id !== '' ? $id : ('tmp-' . substr(md5($title . $body), 0, 8)));
@@ -2318,6 +2357,38 @@ $isSnapshotView = $viewingSnapshot !== null;
             </div>
         <?php endif; ?>
     </aside>
+
+    <?php if ($noteFiles !== []): ?>
+    <div class="source-store" data-source-store hidden aria-hidden="true">
+        <?php foreach ($noteFiles as $name): ?>
+            <pre class="source-view" data-source-content="<?= e($name) ?>"><?php
+                foreach (raw_file_lines($dir . '/' . $name) as $rawLine) {
+                    $n = (int) $rawLine['n'];
+                    echo '<span class="source-line" data-line="' . $n . '">';
+                    echo '<span class="source-line__n" aria-hidden="true">' . $n . '</span>';
+                    echo '<span class="source-line__t">' . e((string) $rawLine['text']) . '</span>';
+                    echo '</span>';
+                }
+            ?></pre>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="source-modal" data-source-modal hidden>
+        <div class="source-modal__backdrop" data-source-minimize></div>
+        <div class="source-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
+            <div class="source-modal__header">
+                <h2 id="source-modal-title" data-source-modal-title>Original note</h2>
+                <button type="button" class="source-modal__btn" data-source-minimize title="Minimize to the bar below" aria-label="Minimize">&#8722;</button>
+                <button type="button" class="source-modal__btn source-modal__btn--close" data-source-close title="Close" aria-label="Close">&times;</button>
+            </div>
+            <div class="source-modal__body" data-source-modal-body></div>
+        </div>
+    </div>
+
+    <div class="source-taskbar" data-source-taskbar hidden aria-label="Minimized original notes">
+        <div class="source-taskbar__items" data-source-taskbar-items></div>
+    </div>
+    <?php endif; ?>
 
     <div class="note-modal" data-note-modal hidden>
         <div class="note-modal__backdrop" data-note-modal-close tabindex="-1"></div>

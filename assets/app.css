@@ -4976,3 +4976,197 @@ body:has(.organized.is-notebook-mode) .bucket-counts {
     max-height: 40vh;
   }
 }
+
+/* Original note viewer (source refs on cards) */
+.item-card__sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.source-ref {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.source-ref:hover,
+.source-ref:focus-visible {
+  text-decoration-style: solid;
+}
+
+.source-ref--missing {
+  color: inherit;
+}
+
+.source-store {
+  display: none !important;
+}
+
+.source-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.source-modal[hidden] {
+  display: none !important;
+}
+
+.source-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.7);
+}
+
+.source-modal__dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(94vw, 56rem);
+  max-height: 86vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.source-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.source-modal__header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 0.95rem;
+  font-family: "IBM Plex Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-modal__btn {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.source-modal__btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.source-modal__body {
+  overflow: auto;
+  padding: 0.5rem 0;
+}
+
+.source-modal__body .source-view {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.source-line {
+  display: flex;
+  gap: 0.85rem;
+  padding: 0 0.85rem;
+}
+
+.source-line__n {
+  flex: 0 0 2.5rem;
+  text-align: right;
+  opacity: 0.45;
+  user-select: none;
+}
+
+.source-line__t {
+  flex: 1;
+  min-width: 0;
+}
+
+.source-line.is-cited {
+  background: rgba(110, 181, 255, 0.16);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.source-line.is-cited .source-line__n {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.source-taskbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 180;
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.source-taskbar[hidden] {
+  display: none !important;
+}
+
+.source-taskbar__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.source-taskbar__item {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.source-taskbar__open,
+.source-taskbar__close {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+}
+
+.source-taskbar__open:hover,
+.source-taskbar__close:hover {
+  color: var(--accent);
+}
+
+.source-taskbar__close {
+  border-left: 1px solid var(--border);
+}
+
+body.has-source-taskbar {
+  padding-bottom: 3rem;
+}
